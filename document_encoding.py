@@ -1,53 +1,58 @@
 """
-Gets document embedding using SBERT pre-trained model.
+Gets document embedding using SBERT pre-trained model, and stores embedding in hdf5 format
 @Author: Tang Yuting
-@Update Date: 14 Jan, 2023
+@Update Date: 15 Jan, 2023
 
-fixme: some attributes need to change according to different dataset configuration
+Notes:
+    - cnn_dailymail dataset uses version 3.0
 """
 
 
-import os
-
-import numpy as np
-from tqdm.auto import tqdm
+import h5py
 from datasets import load_dataset
 from sentence_transformers import SentenceTransformer
+from tqdm.auto import tqdm
 
 
-DATASET_NAME = 'cnn_dailymail'  # used to load huggingface dataset
+# change the arguments below
+PRETRAINED_PATH = 'sentence-transformers/all-MiniLM-L6-v2'
+DATASET_NAME = 'xsum'  # used to load huggingface dataset
+SUB_DATASET_NAME = 'train'
 BATCH_SIZE = 500  # inference is done in batches
+assert PRETRAINED_PATH != ''
 assert DATASET_NAME != ''
 assert BATCH_SIZE > 0
-
-
-output_dir = 'output_' + DATASET_NAME  # by default, the embeddings are saved in local folder with the same 'output_'
-# + dataset
-if not os.path.exists(os.path.join('..', output_dir)):  # create the folder if not exists
-    os.mkdir(os.path.join('..', output_dir))
 
 
 # load dataset
 if DATASET_NAME == 'cnn_dailymail':
     dataset = load_dataset("cnn_dailymail", '3.0.0')
+    text_column = 'article'  # the document column name varies in different datasets
 else:
     dataset = load_dataset(DATASET_NAME)
+    text_column = 'document'
 
 
 # load pre-trained transformer
-model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+model = SentenceTransformer(PRETRAINED_PATH)
 
 
+# save data in hd5f format
+h5f = h5py.File('{}.h5'.format(DATASET_NAME), 'w')
 # get the embedding of documents in batches
-prog_bar = tqdm(total=len(dataset['train']))
-for start_id in range(0, len(dataset['train']), BATCH_SIZE):
-    end_id = min(len(dataset['train']), start_id + BATCH_SIZE)
-    documents = dataset['train'][start_id:end_id]
-    document_texts = documents['article']
+prog_bar = tqdm(total=len(dataset[SUB_DATASET_NAME]))
+id2embedding = {}
+for start_id in range(0, len(dataset[SUB_DATASET_NAME]), BATCH_SIZE):
+    end_id = min(len(dataset[SUB_DATASET_NAME]), start_id + BATCH_SIZE)
+    documents = dataset[SUB_DATASET_NAME][start_id:end_id]
+    document_texts = documents[text_column]
     document_ids = documents['id']
     # encode the documents in batches
-    embeddings = model.encode(document_texts)   # output is tuple with length of BATCH_SIZE
+    embeddings = model.encode(document_texts)  # output is tuple with length of BATCH_SIZE
     # save the embeddings to local path
     for index, embedding in zip(document_ids, embeddings):
-        np.save(os.path.join('..', output_dir, '{}.npy'.format(index)), embedding)
+        h5f.create_dataset(index, data=embedding)
     prog_bar.update(len(embeddings))
+
+
+h5f.close()
