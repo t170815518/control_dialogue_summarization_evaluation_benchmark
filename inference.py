@@ -128,7 +128,9 @@ for _, row in train_data.iterrows():
                                                                                               " ") + '\nsummary: ' + \
                      sample['summary']
 
-    prompt = "summarize the conversation.\n" + train_str + "\n" + 'Conversation: ' + row['dialogue'] + '\nsummary: '
+    prompt = "summarize the conversation.\n" + train_str + "\n" + 'Conversation: '\
+             + row['dialogue'].strip().replace("\n", " ").replace("\r", " ") \
+             + '\nsummary: '
     prompts.append(prompt)
 
     counter += 1
@@ -148,10 +150,10 @@ for _, row in train_data.iterrows():
     if 'keywords' in row:
         # join each keyword with strings '<extra_id_i>', where i is incrementing from 0
         keywords = row['keywords']
-        span_to_fill = '<extra_id_0>'
+        span_to_fill = '<extra_id_0> '  # empty space is needed
         mask_id = 1
         for keyword in keywords:
-            span_to_fill += keyword + '<extra_id_{}>'.format(mask_id)
+            span_to_fill += keyword + ' <extra_id_{}>'.format(mask_id)
             mask_id += 1
         spans_to_fill.append(span_to_fill)
     else:
