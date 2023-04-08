@@ -63,6 +63,9 @@ dataset = load_dataset("samsum")
 
 # randomly sample 1000 dialogues from the dataset
 df = dataset['train'].to_pandas()
+# if sample_num is -1, then use all the data
+if SAMPLE_NUM == -1:
+    SAMPLE_NUM = len(df)
 train_data = df.sample(SAMPLE_NUM)
 # log the index of the sampled dialogues
 logging.info('Sampled dialogues: {}'.format(train_data.id.tolist()))
@@ -116,17 +119,28 @@ few_shot_samples = generate_few_shot_example(train_data, FEW_SHOT_NUM)
 # prepare the prompt and append the prompt to train_data DataFrame
 counter = 0
 prompts = []
+
+
+def formulate_record_to_prompt_text(dialogue, summary: str = None):
+    prompt_text = 'Summarize the conversation:\n'
+    dialogue = dialogue.strip().replace("\n", "").replace("\r", "")
+    prompt_text += dialogue + '\n'
+    prompt_text += 'Summary: '
+    if summary:
+        summary = summary.strip().replace("\n", "").replace("\r", "")
+        prompt_text += summary + '</s>'
+    return prompt_text
+
+
 for _, row in train_data.iterrows():
     train_sample = few_shot_samples[counter]
     train_str = ""
     for _, sample in train_sample.iterrows():
-        train_str += 'Summarize the conversation:\n' + sample['dialogue'].strip().replace("\n", "").replace("\r",
-                                                                                              "") + '\nSummary: ' + \
-                     sample['summary'].strip().replace("\n", "").replace("\r", "") + '\n'
+        train_str += formulate_record_to_prompt_text(sample['dialogue'], sample['summary'])
+        train_str += '\n'
 
-    prompt = train_str + 'Summarize the conversation:\n' \
-             + row['dialogue'].strip().replace("\n", " ").replace("\r", " ") \
-             + '\nSummary: '
+    query_prompt = formulate_record_to_prompt_text(row['dialogue'])
+    prompt = train_str + query_prompt
     prompts.append(prompt)
 
     counter += 1
@@ -178,7 +192,8 @@ def prompt_mT5(mt5_model, mt5_tokenizer, prompt_text: str, keywords_in_response:
 
 for _, row in train_data.iterrows():
     prog_bar.update(1)
-    response = prompt_mT5(model, tokenizer, row['processed_dialogue'], row['keywords'] if IS_ADD_CONTROL_SIGNAL else None)
+    response = prompt_mT5(model, tokenizer, row['processed_dialogue'],
+                          row['keywords'] if IS_ADD_CONTROL_SIGNAL else None)
 
     responses.append(response)
 
