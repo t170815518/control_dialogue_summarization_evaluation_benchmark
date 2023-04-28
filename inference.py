@@ -28,21 +28,6 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, MT5ForConditionalGeneration
 
 
-# hyper-parameters
-MODEL = 'google/mt5-xl'
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-SAMPLE_NUM = 1000
-FEW_SHOT_NUM = 1
-IS_ADD_CONTROL_SIGNAL = True
-
-# some logging settings
-IS_LOG_PROMPTS = True
-
-# remove any special character in MODEL as the prefix of csv file
-csv_prefix = MODEL.replace('/', '_')
-csv_file_name = '{}_{}shot_{}.csv'.format(csv_prefix, FEW_SHOT_NUM, 'control_signal' if IS_ADD_CONTROL_SIGNAL else '')
-
-
 # set up log files
 logging.basicConfig(
         level=logging.INFO,  # otherwise huggingface has many debug logs
@@ -51,6 +36,30 @@ logging.basicConfig(
                 logging.StreamHandler(sys.stdout)
                 ]
         )
+
+
+# hyper-parameters
+MODEL = 'google/mt5-xl'
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+SAMPLE_NUM = -1
+FEW_SHOT_NUM = 3
+IS_ADD_CONTROL_SIGNAL = False
+# control signal related parameters
+IS_UPPER_BOND = True
+NUMBER_OF_KEYWORDS = 3
+
+
+# log sample number and few shot number
+logging.info('Sample number: {}'.format(SAMPLE_NUM))
+logging.info('Few-shot number: {}'.format(FEW_SHOT_NUM))
+
+# some logging settings
+IS_LOG_PROMPTS = True
+
+# remove any special character in MODEL as the prefix of csv file
+csv_prefix = MODEL.replace('/', '_')
+csv_file_name = '{}_{}shot_{}.csv'.format(csv_prefix, FEW_SHOT_NUM, 'control_signal' if IS_ADD_CONTROL_SIGNAL else '')
+
 
 # set up model
 logging.info('Loading {} to Device {}'.format(MODEL, DEVICE))
@@ -63,32 +72,47 @@ dataset = load_dataset("samsum")
 
 # randomly sample 1000 dialogues from the dataset
 df = dataset['train'].to_pandas()
-# if sample_num is -1, then use all the data
+df_test = dataset['test'].to_pandas()
+# if sample_num is -1, then use all the training data
 if SAMPLE_NUM == -1:
     SAMPLE_NUM = len(df)
 train_data = df.sample(SAMPLE_NUM)
+train_data = pd.concat([df_test, train_data], axis=0)
+test_ids = df_test.id.tolist()
 # log the index of the sampled dialogues
 logging.info('Sampled dialogues: {}'.format(train_data.id.tolist()))
 
 if IS_ADD_CONTROL_SIGNAL:
     logging.info('Extracting top 5 tf-idf keywords from the training dataset')
     # Initialize a TfidfVectorizer with the desired configuration
-    vectorizer = TfidfVectorizer(max_df=0.5, min_df=2, stop_words='english')
+    vectorizer = TfidfVectorizer(max_df=0.5, min_df=1, stop_words='english')
 
-    # Fit the vectorizer on the text data
-    vectorizer.fit(train_data['dialogue'])
+    if IS_UPPER_BOND:
+        # Fit the vectorizer on the text data
+        vectorizer.fit(train_data['summary'])
 
-    # Extract the tf-idf matrix
-    tfidf_matrix = vectorizer.transform(train_data['dialogue'])
+        # Extract the tf-idf matrix
+        tfidf_matrix = vectorizer.transform(train_data['summary'])
+    else:
+        # Fit the vectorizer on the text data
+        vectorizer.fit(train_data['dialogue'])
+
+        # Extract the tf-idf matrix
+        tfidf_matrix = vectorizer.transform(train_data['dialogue'])
 
     # Extract the feature names (i.e., the words) from the vectorizer
-    feature_names = vectorizer.get_feature_names()
+    try:
+        feature_names = vectorizer.get_feature_names()
+    except AttributeError:  # newer sklearn uses another function name,
+        # ref: https://stackoverflow.com/questions/70215049/attributeerror-tfidfvectorizer-object-has-no-attribute
+        # -get-feature-names-out
+        feature_names = vectorizer.get_feature_names_out()
 
     # For each data record, extract the top 5 keywords based on their tf-idf scores
     keywords = []
     for i in range(len(train_data)):
         tfidf_scores = tfidf_matrix[i].toarray()[0]
-        top_indices = tfidf_scores.argsort()[-5:][::-1]
+        top_indices = tfidf_scores.argsort()[-NUMBER_OF_KEYWORDS:][::-1]
         top_keywords = [feature_names[idx] for idx in top_indices]
         keywords.append(top_keywords)
 
@@ -96,25 +120,30 @@ if IS_ADD_CONTROL_SIGNAL:
     train_data['keywords'] = keywords
 
 
-def generate_few_shot_example(train_df, few_shot_num):
+def generate_few_shot_example(train_df, few_shot_num, test_sample_ids=None):
     """
     Generate few-shot examples from the training dataset.
+    :param test_sample_ids:
     :param train_df: pd.DataFrame, the training dataset
     :param few_shot_num: int, the number of few-shot examples
     :return: list of pd.DataFrame, each DataFrame contain the few-shot examples
     """
     # generate few-shot examples
     samples = []
+    # remove ids in test_sample_ids from train_df
+    if test_sample_ids:
+        candidates = train_df[~train_df.id.isin(test_sample_ids)]
+    else:
+        candidates = train_df
     for index, _ in train_df.iterrows():
-        candidates = df.drop(index)
-        s = candidates.sample(few_shot_num)
+        s = candidates.drop(index).sample(few_shot_num)
         samples.append(s)
     # log the index of the sampled few-shot examples
     logging.info('Sampled few-shot examples: {}'.format([s.id.tolist() for s in samples]))
     return samples
 
 
-few_shot_samples = generate_few_shot_example(train_data, FEW_SHOT_NUM)
+few_shot_samples = generate_few_shot_example(train_data, FEW_SHOT_NUM, test_sample_ids=test_ids)
 
 # prepare the prompt and append the prompt to train_data DataFrame
 counter = 0
@@ -123,7 +152,7 @@ prompts = []
 
 def formulate_record_to_prompt_text(dialogue, summary: str = None):
     prompt_text = 'Summarize the conversation:\n'
-    dialogue = dialogue.strip().replace("\n", "").replace("\r", "")
+    dialogue = dialogue.strip().replace("\r", "")
     prompt_text += dialogue + '\n'
     prompt_text += 'Summary: '
     if summary:
@@ -137,6 +166,7 @@ for _, row in train_data.iterrows():
     train_str = ""
     for _, sample in train_sample.iterrows():
         train_str += formulate_record_to_prompt_text(sample['dialogue'], sample['summary'])
+        train_str += '\n'
         train_str += '\n'
 
     query_prompt = formulate_record_to_prompt_text(row['dialogue'])
@@ -182,10 +212,7 @@ def prompt_mT5(mt5_model, mt5_tokenizer, prompt_text: str, keywords_in_response:
         logging.info('===Prompt===\n{}\n========='.format(prompt_text + span_to_fill))
     X = mt5_tokenizer.encode(prompt_text + span_to_fill, return_tensors="pt").to(DEVICE)
     # Summarize
-    y_ids = mt5_model.generate(X,
-                               num_beams=4,
-                               no_repeat_ngram_size=2,
-                               early_stopping=True)
+    y_ids = mt5_model.generate(X, max_length=50, do_sample=False, eos_token_id=2, early_stopping=True, num_beams=5)
     y = tokenizer.decode(y_ids[0], skip_special_tokens=True)
     return y
 
