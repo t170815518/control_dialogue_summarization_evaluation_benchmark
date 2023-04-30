@@ -17,6 +17,7 @@ TODO:
 import logging
 import sys
 import re
+import argparse
 from datetime import datetime
 
 import pandas as pd
@@ -38,12 +39,19 @@ logging.basicConfig(
         )
 
 
+# set up argument parser
+parser = argparse.ArgumentParser()
+parser.add_argument('--model_name', type=str, default='google/mt5-xl', help='the name of the model')
+parser.add_argument('--few_shot_num', type=int, default=1, help='the number of few-shot examples')
+# parse the arguments
+args = parser.parse_args()
+
 # hyper-parameters
-MODEL = 'google/mt5-xl'
+MODEL = args.model_name
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 SAMPLE_NUM = -1
-FEW_SHOT_NUM = 3
-IS_ADD_CONTROL_SIGNAL = False
+FEW_SHOT_NUM = args.few_shot_num
+IS_ADD_CONTROL_SIGNAL = True
 # control signal related parameters
 IS_UPPER_BOND = True
 NUMBER_OF_KEYWORDS = 3
@@ -89,16 +97,17 @@ if IS_ADD_CONTROL_SIGNAL:
 
     if IS_UPPER_BOND:
         # Fit the vectorizer on the text data
-        vectorizer.fit(train_data['summary'])
+        vectorizer.fit(df_test['summary'])
 
         # Extract the tf-idf matrix
-        tfidf_matrix = vectorizer.transform(train_data['summary'])
+        tfidf_matrix = vectorizer.transform(df_test['summary'])
     else:
         # Fit the vectorizer on the text data
         vectorizer.fit(train_data['dialogue'])
 
         # Extract the tf-idf matrix
         tfidf_matrix = vectorizer.transform(train_data['dialogue'])
+        raise NotImplementedError('Not implemented yet')
 
     # Extract the feature names (i.e., the words) from the vectorizer
     try:
@@ -110,13 +119,14 @@ if IS_ADD_CONTROL_SIGNAL:
 
     # For each data record, extract the top 5 keywords based on their tf-idf scores
     keywords = []
-    for i in range(len(train_data)):
+    for i in range(len(df_test)):
         tfidf_scores = tfidf_matrix[i].toarray()[0]
         top_indices = tfidf_scores.argsort()[-NUMBER_OF_KEYWORDS:][::-1]
         top_keywords = [feature_names[idx] for idx in top_indices]
         keywords.append(top_keywords)
 
-    # Add the keywords as a new column in the dataframe
+    # pad keywords to the same length as train data
+    keywords = keywords + [None] * (len(train_data) - len(keywords))
     train_data['keywords'] = keywords
 
 
@@ -161,7 +171,8 @@ def formulate_record_to_prompt_text(dialogue, summary: str = None):
     return prompt_text
 
 
-for _, row in train_data.iterrows():
+query_samples = train_data[train_data.id.isin(test_ids)]
+for _, row in query_samples.iterrows():
     train_sample = few_shot_samples[counter]
     train_str = ""
     for _, sample in train_sample.iterrows():
@@ -175,16 +186,13 @@ for _, row in train_data.iterrows():
 
     counter += 1
 
+# pad prompts with NaN such that its length is the same as the length of train_data
+prompts += [''] * (len(train_data) - len(prompts))
 train_data['processed_dialogue'] = prompts
-
-# export train_data to csv file
-train_data.to_csv('{}_train_data.csv'.format(csv_prefix))
 
 # make inference without SAP
 responses = []
 spans_to_fill = []
-
-prog_bar = tqdm(total=len(train_data))
 
 
 def prompt_mT5(mt5_model, mt5_tokenizer, prompt_text: str, keywords_in_response: list = None):
@@ -217,12 +225,16 @@ def prompt_mT5(mt5_model, mt5_tokenizer, prompt_text: str, keywords_in_response:
     return y
 
 
-for _, row in train_data.iterrows():
+query_samples = train_data[train_data.id.isin(test_ids)]
+prog_bar = tqdm(total=len(query_samples))
+for _, row in query_samples.iterrows():
     prog_bar.update(1)
     response = prompt_mT5(model, tokenizer, row['processed_dialogue'],
                           row['keywords'] if IS_ADD_CONTROL_SIGNAL else None)
 
     responses.append(response)
+
+label_summary = query_samples['summary']
 
 # parse the responses
 if 'keywords' in train_data.columns:
@@ -239,10 +251,10 @@ else:
 logging.info('Evaluating the responses in ROUGE scores')
 rouge = Rouge()
 try:
-    rouge_scores = rouge.get_scores(responses, train_data['summary'].tolist())
+    rouge_scores = rouge.get_scores(responses, label_summary.tolist())
 except ValueError:  # raised when hypothsis is empty
     # create a DataFrame with two columns: responses and train_data['summary'].tolist()
-    df = pd.DataFrame(list(zip(responses, train_data['summary'].tolist())), columns=['response', 'summary'])
+    df = pd.DataFrame(list(zip(responses, label_summary.tolist())), columns=['response', 'summary'])
     logging.info('empty hypothesis, csv is exported without rouge score')
     df.to_csv(csv_file_name)
     # end the program
@@ -250,12 +262,12 @@ except ValueError:  # raised when hypothsis is empty
 
 logging.info('Exporting the responses and the scores to local csv files')
 df_results = []
-for i in range(len(train_data)):
-    session = train_data.iloc[i]
+for i in range(len(responses)):
+    session = label_summary.iloc[i]
     response = responses[i]
     d = {
             'session_id': session.index,
-            'gold_summary': session['summary'],
+            'gold_summary': session,
             'response_summary': response,
             'rouge_1_f': rouge_scores[i]['rouge-1']['f'],
             'rouge_2_f': rouge_scores[i]['rouge-2']['f'],
