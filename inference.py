@@ -16,7 +16,9 @@ TODO:
 
 import logging
 import sys
+import os
 import re
+import json
 import argparse
 from datetime import datetime
 
@@ -27,7 +29,6 @@ from rouge import Rouge
 from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm import tqdm
 from transformers import AutoTokenizer, MT5ForConditionalGeneration
-
 
 # set up log files
 logging.basicConfig(
@@ -43,31 +44,40 @@ logging.basicConfig(
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_name', type=str, default='google/mt5-xl', help='the name of the model')
 parser.add_argument('--few_shot_num', type=int, default=1, help='the number of few-shot examples')
+# add argument about control signal types, e.g., tf-idf, person names
+parser.add_argument('--control_signal', type=str, default=None, help='the type of control signal',
+                    choices=['tfidf', 'names'])
+
 # parse the arguments
 args = parser.parse_args()
+
+
+# log the arguments
+logging.info('Arguments: {}'.format(args))
+
 
 # hyper-parameters
 MODEL = args.model_name
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 SAMPLE_NUM = -1
 FEW_SHOT_NUM = args.few_shot_num
-IS_ADD_CONTROL_SIGNAL = True
+CONTROL_SIGNAL = args.control_signal
 # control signal related parameters
 IS_UPPER_BOND = True
 NUMBER_OF_KEYWORDS = 3
+IS_CONSISTENT_DEMONSTRATIONS = args.is_consistent_demonstrations
+# some logging settings
+IS_LOG_PROMPTS = True
 
 
 # log sample number and few shot number
 logging.info('Sample number: {}'.format(SAMPLE_NUM))
 logging.info('Few-shot number: {}'.format(FEW_SHOT_NUM))
 
-# some logging settings
-IS_LOG_PROMPTS = True
 
 # remove any special character in MODEL as the prefix of csv file
 csv_prefix = MODEL.replace('/', '_')
-csv_file_name = '{}_{}shot_{}.csv'.format(csv_prefix, FEW_SHOT_NUM, 'control_signal' if IS_ADD_CONTROL_SIGNAL else '')
-
+csv_file_name = '{}_{}shot_{}.csv'.format(csv_prefix, FEW_SHOT_NUM, CONTROL_SIGNAL if CONTROL_SIGNAL is not None else '')
 
 # set up model
 logging.info('Loading {} to Device {}'.format(MODEL, DEVICE))
@@ -90,11 +100,11 @@ test_ids = df_test.id.tolist()
 # log the index of the sampled dialogues
 logging.info('Sampled dialogues: {}'.format(train_data.id.tolist()))
 
-if IS_ADD_CONTROL_SIGNAL:
+
+def extract_tf_idf_keywords():
     logging.info('Extracting top 5 tf-idf keywords from the training dataset')
     # Initialize a TfidfVectorizer with the desired configuration
     vectorizer = TfidfVectorizer(max_df=0.5, min_df=1, stop_words='english')
-
     if IS_UPPER_BOND:
         # Fit the vectorizer on the text data
         vectorizer.fit(df_test['summary'])
@@ -108,7 +118,6 @@ if IS_ADD_CONTROL_SIGNAL:
         # Extract the tf-idf matrix
         tfidf_matrix = vectorizer.transform(train_data['dialogue'])
         raise NotImplementedError('Not implemented yet')
-
     # Extract the feature names (i.e., the words) from the vectorizer
     try:
         feature_names = vectorizer.get_feature_names()
@@ -116,18 +125,40 @@ if IS_ADD_CONTROL_SIGNAL:
         # ref: https://stackoverflow.com/questions/70215049/attributeerror-tfidfvectorizer-object-has-no-attribute
         # -get-feature-names-out
         feature_names = vectorizer.get_feature_names_out()
-
     # For each data record, extract the top 5 keywords based on their tf-idf scores
     keywords = []
-    for i in range(len(df_test)):
-        tfidf_scores = tfidf_matrix[i].toarray()[0]
+    for x in range(len(df_test)):
+        tfidf_scores = tfidf_matrix[x].toarray()[0]
         top_indices = tfidf_scores.argsort()[-NUMBER_OF_KEYWORDS:][::-1]
         top_keywords = [feature_names[idx] for idx in top_indices]
         keywords.append(top_keywords)
-
     # pad keywords to the same length as train data
     keywords = keywords + [None] * (len(train_data) - len(keywords))
-    train_data['keywords'] = keywords
+    return keywords
+
+
+def extract_person_names_keywords():
+    logging.info('Extracting person names as keywords')
+    # extract person names from the training data
+    person_names = []
+    for x in range(len(df_test)):
+        dialogue_turns = df_test['dialogue'][x].split('\n')
+        person_name = []
+        for name in [turn.split(':')[0] for turn in dialogue_turns]:
+            if name not in person_name:
+                person_name.append(name)
+        person_names.append(person_name)
+    # pad keywords to the same length as train data
+    person_names = person_names + [None] * (len(train_data) - len(person_names))
+    return person_names
+
+
+if CONTROL_SIGNAL == 'tfidf':
+    keywords_column = extract_tf_idf_keywords()
+    train_data['keywords'] = keywords_column
+elif CONTROL_SIGNAL == 'names':
+    keywords_column = extract_person_names_keywords()
+    train_data['keywords'] = keywords_column
 
 
 def generate_few_shot_example(train_df, few_shot_num, test_sample_ids=None):
@@ -145,7 +176,7 @@ def generate_few_shot_example(train_df, few_shot_num, test_sample_ids=None):
         candidates = train_df[~train_df.id.isin(test_sample_ids)]
     else:
         candidates = train_df
-    for index, _ in train_df.iterrows():
+    for index, _ in train_df[train_df.id.isin(test_sample_ids)].iterrows():
         s = candidates.drop(index).sample(few_shot_num)
         samples.append(s)
     # log the index of the sampled few-shot examples
@@ -230,7 +261,7 @@ prog_bar = tqdm(total=len(query_samples))
 for _, row in query_samples.iterrows():
     prog_bar.update(1)
     response = prompt_mT5(model, tokenizer, row['processed_dialogue'],
-                          row['keywords'] if IS_ADD_CONTROL_SIGNAL else None)
+                          row['keywords'] if CONTROL_SIGNAL is not None else None)
 
     responses.append(response)
 
@@ -238,9 +269,10 @@ label_summary = query_samples['summary']
 
 # parse the responses
 if 'keywords' in train_data.columns:
+    logging.info('exporting responses to csv file')
     # append the train data with two additional columns: "spans_to_fill" and "responses"
-    train_data['spans_to_fill'] = spans_to_fill
-    train_data['responses'] = responses
+    train_data['spans_to_fill'] = spans_to_fill + [None] * (len(train_data) - len(spans_to_fill))
+    train_data['responses'] = responses + [None] * (len(train_data) - len(responses))
     # export the train data to csv file
     train_data.to_csv(csv_file_name, index=False)
     # exit the program
