@@ -1,0 +1,12 @@
+numpy
+tqdm
+datasets
+nltk
+pandas
+rouge
+scikit-learn
+transformers
+h5py
+sentencepiece
+protobuf<=3.20.1
+py7zr
