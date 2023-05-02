@@ -49,6 +49,9 @@ parser.add_argument('--few_shot_num', type=int, default=1, help='the number of f
 parser.add_argument('--control_signal', type=str, default=None, help='the type of control signal',
                     choices=['tfidf', 'names'])
 parser.add_argument('--demonstration_file', type=str, default=None, help='the pre-generated demonstration file')
+parser.add_argument('--upper_bond', type=bool, default=True, help='whether to extract keywords from the summary as '
+                                                                  'upper bonds')
+
 
 # parse the arguments
 args = parser.parse_args()
@@ -65,7 +68,7 @@ SAMPLE_NUM = -1
 FEW_SHOT_NUM = args.few_shot_num
 CONTROL_SIGNAL = args.control_signal
 # control signal related parameters
-IS_UPPER_BOND = True
+IS_UPPER_BOND = args.upper_bond
 NUMBER_OF_KEYWORDS = 3
 DEMONSTRATION_FILE = args.demonstration_file
 # some logging settings
@@ -189,7 +192,7 @@ def generate_few_shot_example(train_df, few_shot_num, test_sample_ids=None):
 if DEMONSTRATION_FILE is None:
     few_shot_samples = generate_few_shot_example(train_data, FEW_SHOT_NUM, test_sample_ids=test_ids)
     # save few_shot_samples to pickle
-    with open('few_shot_samples.pkl', 'wb') as f:
+    with open('few_shot_samples_{}.pkl'.format(FEW_SHOT_NUM), 'wb') as f:
         pickle.dump(few_shot_samples, f)
 else:
     # load pickle file
