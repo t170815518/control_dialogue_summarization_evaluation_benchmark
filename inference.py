@@ -29,7 +29,7 @@ from datasets import load_dataset
 from rouge import Rouge
 from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm import tqdm
-from transformers import AutoTokenizer, MT5ForConditionalGeneration
+from transformers import AutoTokenizer, MT5ForConditionalGeneration, AutoTokenizer, AutoModelForCausalLM
 
 # set up log files
 logging.basicConfig(
@@ -74,24 +74,24 @@ DEMONSTRATION_FILE = args.demonstration_file
 # some logging settings
 IS_LOG_PROMPTS = True
 
-
 # log sample number and few shot number
 logging.info('Sample number: {}'.format(SAMPLE_NUM))
 logging.info('Few-shot number: {}'.format(FEW_SHOT_NUM))
 
-
 # remove any special character in MODEL as the prefix of csv file
 csv_prefix = MODEL.replace('/', '_')
-csv_file_name = '{}_{}shot_{}.csv'.format(csv_prefix, FEW_SHOT_NUM, CONTROL_SIGNAL if CONTROL_SIGNAL is not None else '')
+csv_file_name = '{}_{}shot_{}.csv'.format(csv_prefix, FEW_SHOT_NUM,
+                                          CONTROL_SIGNAL if CONTROL_SIGNAL is not None else '')
 
 # set up model
 logging.info('Loading {} to Device {}'.format(MODEL, DEVICE))
-if 'Cerebras-GPT' in MODEL:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL)
-    model = AutoModelForCausalLM.from_pretrained(MODEL).to(DEVICE)
-else:
+
+if 'mT5' in MODEL:
     tokenizer = AutoTokenizer.from_pretrained(MODEL)
     model = MT5ForConditionalGeneration.from_pretrained(MODEL).to(DEVICE)
+else:
+    tokenizer = AutoTokenizer.from_pretrained(MODEL)
+    model = AutoModelForCausalLM.from_pretrained(MODEL).to(DEVICE)
 
 # load dataset
 logging.info('Loading dataset')
@@ -215,9 +215,8 @@ def formulate_record_to_prompt_text(dialogue, summary: str = None):
     prompt_text += 'Summary: '
     if summary:
         summary = summary.strip().replace("\n", "").replace("\r", "")
-        if 'Cerebras-GPT' in MODEL:
-            prompt_text += summary
-        else:
+        prompt_text += summary
+        if 'mt5' in MODEL:
             prompt_text += summary + '</s>'
     return prompt_text
 
@@ -291,17 +290,17 @@ def prompt_cerebras(cerebras_model, cerebras_tokenizer, prompt_text: str, keywor
     y = cerebras_tokenizer.batch_decode(y_ids, skip_special_tokens=True)
     return y
 
+
 query_samples = train_data[train_data.id.isin(test_ids)]
 prog_bar = tqdm(total=len(query_samples))
 for _, row in query_samples.iterrows():
     prog_bar.update(1)
-    if 'Cerebras-GPT' in MODEL:
-        response = prompt_cerebras(model, tokenizer, row['processed_dialogue'],
-                                   row['keywords'] if CONTROL_SIGNAL is not None else None)
-    else:
+    if 'mt5' in MODEL:
         response = prompt_mT5(model, tokenizer, row['processed_dialogue'],
                               row['keywords'] if CONTROL_SIGNAL is not None else None)
-
+    else:
+        response = prompt_cerebras(model, tokenizer, row['processed_dialogue'],
+                                   row['keywords'] if CONTROL_SIGNAL is not None else None)
     responses.append(response)
 
 label_summary = query_samples['summary']
@@ -329,17 +328,18 @@ def parse_cerebras_response(response_list):
         response_list = [x[0].strip().split('Summary:')[-1] for x in response_list]
     return response_list
 
+
 # parse the responses
-if 'Cerebras-GPT' in MODEL:
-    responses = parse_cerebras_response(responses)
-else:
+if 'mt5' in MODEL:
     responses = parse_mt5_response(responses)
+else:
+    responses = parse_cerebras_response(responses)
 
 logging.info('Evaluating the responses in ROUGE scores')
 rouge = Rouge()
 try:
     rouge_scores = rouge.get_scores(responses, label_summary.tolist())
-except ValueError:  # raised when hypothsis is empty
+except ValueError:  # raised when hypothesis is empty
     # create a DataFrame with two columns: responses and train_data['summary'].tolist()
     df = pd.DataFrame(list(zip(responses, label_summary.tolist())), columns=['response', 'summary'])
     logging.info('empty hypothesis, csv is exported without rouge score')
