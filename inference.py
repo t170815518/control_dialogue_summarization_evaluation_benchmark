@@ -82,6 +82,8 @@ logging.info('Few-shot number: {}'.format(FEW_SHOT_NUM))
 csv_prefix = MODEL.replace('/', '_')
 csv_file_name = '{}_{}shot_{}.csv'.format(csv_prefix, FEW_SHOT_NUM,
                                           CONTROL_SIGNAL if CONTROL_SIGNAL is not None else '')
+csv_keyword_file = '{}_{}shot_{}_keywords.csv'.format(csv_prefix, FEW_SHOT_NUM,
+                                                         CONTROL_SIGNAL if CONTROL_SIGNAL is not None else '')
 
 # set up model
 logging.info('Loading {} to Device {}'.format(MODEL, DEVICE))
@@ -278,7 +280,12 @@ def prompt_mT5(mt5_model, mt5_tokenizer, prompt_text: str, keywords_in_response:
 def prompt_cerebras(cerebras_model, cerebras_tokenizer, prompt_text: str, keywords_in_response: list = None):
     # check if the keywords are provided
     if keywords_in_response is not None:
-        raise NotImplementedError
+        # remove the last 'Summary: ' in prompt_text
+        prompt_text = prompt_text[:-9]
+        # join the keywords as comma
+        keywords_str = ', '.join(keywords_in_response)
+        # append the keywords to the prompt text
+        prompt_text += 'Summary with keywords ' + keywords_str + ': '
     # tokenize dialogue data
     if IS_LOG_PROMPTS:
         logging.info('===Prompt===\n{}\n========='.format(prompt_text))
@@ -323,10 +330,12 @@ def parse_mt5_response(response_list):
 
 def parse_cerebras_response(response_list):
     if 'keywords' in train_data.columns:
-        raise NotImplementedError
+        response_list = response_list[0]
+        # split the response by the regular expression r"Summary [^:]+: "
+        res = re.split(r"Summary [^:]+: ", response_list)[-1]
     else:
-        response_list = [x[0].strip().split('Summary:')[-1] for x in response_list]
-    return response_list
+        res = [x[0].strip().split('Summary:')[-1] for x in response_list]
+    return res
 
 
 # parse the responses
@@ -334,6 +343,8 @@ if 'mt5' in MODEL:
     responses = parse_mt5_response(responses)
 else:
     responses = parse_cerebras_response(responses)
+    # export keywords column of train data to csv file
+    query_samples['keywords'].to_csv(csv_keyword_file, index=False)
 
 logging.info('Evaluating the responses in ROUGE scores')
 rouge = Rouge()
