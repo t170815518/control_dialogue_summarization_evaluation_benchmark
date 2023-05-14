@@ -86,8 +86,12 @@ csv_file_name = '{}_{}shot_{}.csv'.format(csv_prefix, FEW_SHOT_NUM, CONTROL_SIGN
 
 # set up model
 logging.info('Loading {} to Device {}'.format(MODEL, DEVICE))
-tokenizer = AutoTokenizer.from_pretrained(MODEL)
-model = MT5ForConditionalGeneration.from_pretrained(MODEL).to(DEVICE)
+if 'Cerebras-GPT' in MODEL:
+    tokenizer = AutoTokenizer.from_pretrained(MODEL)
+    model = AutoModelForCausalLM.from_pretrained(MODEL).to(DEVICE)
+else:
+    tokenizer = AutoTokenizer.from_pretrained(MODEL)
+    model = MT5ForConditionalGeneration.from_pretrained(MODEL).to(DEVICE)
 
 # load dataset
 logging.info('Loading dataset')
@@ -211,7 +215,10 @@ def formulate_record_to_prompt_text(dialogue, summary: str = None):
     prompt_text += 'Summary: '
     if summary:
         summary = summary.strip().replace("\n", "").replace("\r", "")
-        prompt_text += summary + '</s>'
+        if 'Cerebras-GPT' in MODEL:
+            prompt_text += summary
+        else:
+            prompt_text += summary + '</s>'
     return prompt_text
 
 
@@ -269,29 +276,64 @@ def prompt_mT5(mt5_model, mt5_tokenizer, prompt_text: str, keywords_in_response:
     return y
 
 
+def prompt_cerebras(cerebras_model, cerebras_tokenizer, prompt_text: str, keywords_in_response: list = None):
+    # check if the keywords are provided
+    if keywords_in_response is not None:
+        raise NotImplementedError
+    # tokenize dialogue data
+    if IS_LOG_PROMPTS:
+        logging.info('===Prompt===\n{}\n========='.format(prompt_text))
+    X = cerebras_tokenizer(prompt_text, return_tensors="pt").to(DEVICE)
+    # Summarize
+    y_ids = cerebras_model.generate(**X, num_beams=5,
+                                    max_new_tokens=50, early_stopping=True,
+                                    no_repeat_ngram_size=2)
+    y = cerebras_tokenizer.batch_decode(y_ids, skip_special_tokens=True)
+    return y
+
 query_samples = train_data[train_data.id.isin(test_ids)]
 prog_bar = tqdm(total=len(query_samples))
 for _, row in query_samples.iterrows():
     prog_bar.update(1)
-    response = prompt_mT5(model, tokenizer, row['processed_dialogue'],
-                          row['keywords'] if CONTROL_SIGNAL is not None else None)
+    if 'Cerebras-GPT' in MODEL:
+        response = prompt_cerebras(model, tokenizer, row['processed_dialogue'],
+                                   row['keywords'] if CONTROL_SIGNAL is not None else None)
+    else:
+        response = prompt_mT5(model, tokenizer, row['processed_dialogue'],
+                              row['keywords'] if CONTROL_SIGNAL is not None else None)
 
     responses.append(response)
 
 label_summary = query_samples['summary']
 
+
+def parse_mt5_response(response_list):
+    if 'keywords' in train_data.columns:
+        logging.info('exporting responses to csv file')
+        # append the train data with two additional columns: "spans_to_fill" and "responses"
+        train_data['spans_to_fill'] = spans_to_fill + [None] * (len(train_data) - len(spans_to_fill))
+        train_data['responses'] = response_list + [None] * (len(train_data) - len(response_list))
+        # export the train data to csv file
+        train_data.to_csv(csv_file_name, index=False)
+        # exit the program
+        sys.exit(0)
+    else:
+        response_list = [x.strip().split('<extra_id_0>')[-1] for x in response_list]
+    return response_list
+
+
+def parse_cerebras_response(response_list):
+    if 'keywords' in train_data.columns:
+        raise NotImplementedError
+    else:
+        response_list = [x[0].strip().split('Summary:')[-1] for x in response_list]
+    return response_list
+
 # parse the responses
-if 'keywords' in train_data.columns:
-    logging.info('exporting responses to csv file')
-    # append the train data with two additional columns: "spans_to_fill" and "responses"
-    train_data['spans_to_fill'] = spans_to_fill + [None] * (len(train_data) - len(spans_to_fill))
-    train_data['responses'] = responses + [None] * (len(train_data) - len(responses))
-    # export the train data to csv file
-    train_data.to_csv(csv_file_name, index=False)
-    # exit the program
-    sys.exit(0)
+if 'Cerebras-GPT' in MODEL:
+    responses = parse_cerebras_response(responses)
 else:
-    responses = [x.strip().split('<extra_id_0>')[-1] for x in responses]
+    responses = parse_mt5_response(responses)
 
 logging.info('Evaluating the responses in ROUGE scores')
 rouge = Rouge()
