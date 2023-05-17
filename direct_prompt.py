@@ -11,7 +11,7 @@ import tqdm
 import wandb
 import pandas as pd
 import torch
-from transformers import AutoTokenizer, MT5ForConditionalGeneration
+from transformers import AutoTokenizer, MT5ForConditionalGeneration, AutoModelForSeq2SeqLM
 from few_shot_prompt_utility import format_prompt_from_demo_pairs, prompt_T5, evaluate_response_summaries
 
 wandb.login(key='3138e1b24deb278ed045d0dedb39511d3a96245b')
@@ -49,6 +49,9 @@ if args.model in ['google/mt5-xl', 'google/mt5-base']:
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     model = MT5ForConditionalGeneration.from_pretrained(args.model).to(DEVICE)
+elif args.model == 'google/mt5-xxl':
+    model = AutoModelForSeq2SeqLM.from_pretrained("google/mt5-xxl", device_map="auto", torch_dtype=torch.float16)
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
 else:
     raise NotImplementedError('The model is not implemented yet.')
 
@@ -58,7 +61,7 @@ for run_id, prompts in run_id2prompts.items():
     logging.info("Prompting the model for Run {}".format(run_id))
     run_id2pred_summaries[run_id] = []
     for prompt in tqdm.tqdm(prompts):
-        if args.model in ['google/mt5-xl', 'google/mt5-base']:
+        if args.model in ['google/mt5-xl', 'google/mt5-base', 'google/mt5-xxl']:
             response = prompt_T5(model, tokenizer, prompt)
         else:
             raise NotImplementedError('The model is not implemented yet.')
