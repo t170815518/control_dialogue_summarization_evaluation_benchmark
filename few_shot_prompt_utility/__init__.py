@@ -1,3 +1,3 @@
 from .prompt_formation import formulate_record_to_prompt_text, format_prompt_from_demo_pairs
-from .model_inference import prompt_T5
+from .model_inference import prompt_llm
 from .evaluation import evaluate_response_summaries
