@@ -20,6 +20,8 @@ def evaluate_response_summaries(run_id2pred_summaries: dict, run_id2gold_summari
         scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
         for i, pred_summary in enumerate(pred_summaries):
             gold_summary = run_id2gold_summaries[run_id][i]
+            if pred_summary is None:
+                continue
             scores = scorer.score(pred_summary, gold_summary)
             scores_in_run.append(scores)
             summary_text_row = {

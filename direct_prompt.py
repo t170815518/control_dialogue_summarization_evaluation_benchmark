@@ -25,18 +25,29 @@ parser.add_argument('--dataset', type=str, default='samsum', help='the dataset t
 # parse the arguments
 args = parser.parse_args()
 
-# # start a new wandb run to track this script
-# wandb.init(
-#         project="In-context-learning for Dialogue Summarization",
-#         # track hyperparameters and run metadata
-#         config={
-#                 'model_type': args.model,
-#                 'k': args.k,
-#                 'dataset': args.dataset,
-#                 },
-#         group='performance_in_context_learning',
-#         job_type='evaluation'
-#         )
+
+# set up log files
+logging.basicConfig(
+        level=logging.INFO,  # otherwise huggingface has many debug logs
+        handlers=[
+                logging.FileHandler("{}.log".format(datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))),
+                logging.StreamHandler(sys.stdout)
+                ]
+        )
+
+
+# start a new wandb run to track this script
+wandb.init(
+        project="In-context-learning for Dialogue Summarization",
+        # track hyperparameters and run metadata
+        config={
+                'model_type': args.model,
+                'k': args.k,
+                'dataset': args.dataset,
+                },
+        group='performance_in_context_learning',
+        job_type='evaluation'
+        )
 
 # load the demonstration pickle file
 with open(args.demonstration_file, 'rb') as f:
@@ -53,7 +64,7 @@ elif args.model == 'google/mt5-xxl':
     model = AutoModelForSeq2SeqLM.from_pretrained("google/mt5-xxl", device_map="auto", torch_dtype=torch.float16)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
 elif 'cerebras/Cerebras-GPT' in args.model:
-    model = AutoModelForCausalLM.from_pretrained(args.model).to(DEVICE)
+    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16).to(DEVICE)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
 else:
     raise NotImplementedError('The model is not implemented yet.')
@@ -65,7 +76,12 @@ for run_id, prompts in run_id2prompts.items():
     run_id2pred_summaries[run_id] = []
     for prompt in tqdm.tqdm(prompts):
         is_gpt_style = args.model not in ['google/mt5-xl', 'google/mt5-base', 'google/mt5-xxl']
-        response = prompt_llm(model, tokenizer, prompt, is_gpt_style)
+        try:
+            response = prompt_llm(model, tokenizer, prompt, is_gpt_style)
+        except Exception as e:  # in case any error happens
+            logging.info("Exception: {}".format(e))
+            logging.info("Prompt: {}".format(prompt))
+            response = None
         run_id2pred_summaries[run_id].append(response)
 
 logging.info("Start to evaluate the performance")
