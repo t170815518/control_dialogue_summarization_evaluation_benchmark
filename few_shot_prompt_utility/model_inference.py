@@ -20,6 +20,9 @@ def prompt_llm(model, tokenizer, prompt_text: str, is_gpt_style: bool = False) -
         y_ids = model.generate(X, num_beams=5,
                                max_new_tokens=50, early_stopping=True,
                                no_repeat_ngram_size=2)
+                               no_repeat_ngram_size=2, pad_token_id=tokenizer.eos_token_id)  # ref:
+        # https://stackoverflow.com/questions/69609401/suppress-huggingface-logging-warning-setting-pad-token-id-to
+        # -eos-token-id
     else:
         y_ids = model.generate(X, max_length=50, do_sample=False, eos_token_id=2, early_stopping=True, num_beams=5)
     y = tokenizer.decode(y_ids[0], skip_special_tokens=True)
