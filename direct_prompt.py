@@ -11,8 +11,16 @@ import tqdm
 import wandb
 import pandas as pd
 import torch
-from transformers import AutoTokenizer, MT5ForConditionalGeneration, AutoModelForSeq2SeqLM, AutoModelForCausalLM
-from few_shot_prompt_utility import format_prompt_from_demo_pairs, prompt_llm, evaluate_response_summaries
+from accelerate import infer_auto_device_map, init_empty_weights
+try:
+    from transformers import AutoTokenizer, MT5ForConditionalGeneration, AutoModelForSeq2SeqLM, AutoModelForCausalLM, \
+        LlamaTokenizer, LlamaForCausalLM
+except ImportError:  # old huggingface does not have LlmaTimeForCausalLM
+    from transformers import AutoTokenizer, MT5ForConditionalGeneration, AutoModelForSeq2SeqLM, AutoModelForCausalLM
+from few_shot_prompt_utility import format_prompt_from_demo_pairs, prompt_llm, evaluate_response_summaries, \
+    generate_tf_idf_keywords
+
+
 
 # wandb.login(key='3138e1b24deb278ed045d0dedb39511d3a96245b')
 
