@@ -78,13 +78,15 @@ if args.model in ['google/mt5-xl', 'google/mt5-base']:
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     model = MT5ForConditionalGeneration.from_pretrained(args.model).to(DEVICE)
 elif args.model == 'google/mt5-xxl':
-    model = AutoModelForSeq2SeqLM.from_pretrained("google/mt5-xxl", device_map="auto", torch_dtype=torch.float16)
+    model = AutoModelForSeq2SeqLM.from_pretrained(args.model, device_map="auto", torch_dtype=torch.float16)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-elif 'cerebras/Cerebras-GPT' in args.model:
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16).to(DEVICE)
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+elif 'llama' in args.model or 'alpaca' in args.model:
+    model = LlamaForCausalLM.from_pretrained(args.model, device_map="auto")
+    tokenizer = LlamaTokenizer.from_pretrained(args.model)
 else:
-    raise NotImplementedError('The model is not implemented yet.')
+    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map='auto')
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    logging.info("device_map: {}".format(model.hf_device_map))
 
 logging.info("Start to prompt the model")
 run_id2pred_summaries = {}
