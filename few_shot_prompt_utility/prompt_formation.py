@@ -93,10 +93,11 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str):
                         mask_id += 1
                     prompt += span_to_fill.strip()
                     run_id2prompts[run_id].append([prompt, span_to_fill.strip()])
-                    run_id2gold_summaries[run_id].append(test_sample['summary'])
                 else:
                     prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
                                                               keyword_prompts=keywords[0])
+                    run_id2prompts[run_id].append([prompt, keywords[0]])
+                run_id2gold_summaries[run_id].append(test_sample['summary'])
             else:
                 raise ValueError('The number of elements in the demo_pairs is not correct.')
     return run_id2prompts, run_id2gold_summaries
