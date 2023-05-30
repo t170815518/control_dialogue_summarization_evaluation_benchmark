@@ -35,6 +35,7 @@ parser.add_argument('--demonstration_file', type=str, default=None, help='the pr
 parser.add_argument('--dataset', type=str, default='samsum', help='the dataset to evaluate on')
 parser.add_argument('--keywords', type=str, default=None, choices=['tfidf'], help='the types of keywords to use')
 parser.add_argument('--keyword_num', type=int, default=3, help='the number of keywords to use')
+parser.add_argument('--log', type=bool, default=True, help='whether to log the results to wandb')
 # parse the arguments
 args = parser.parse_args()
 
@@ -48,19 +49,20 @@ logging.basicConfig(
         )
 
 # start a new wandb run to track this script
-wandb.init(
-        project="In-context-learning for Dialogue Summarization",
-        # track hyperparameters and run metadata
-        config={
-                'model_type': args.model,
-                'k': args.k,
-                'dataset': args.dataset,
-                'keywords': args.keywords,
-                'keyword_num': args.keyword_num
-                },
-        group='performance_in_context_learning',
-        job_type='evaluation'
-        )
+if args.log:
+    wandb.init(
+            project="In-context-learning for Dialogue Summarization",
+            # track hyperparameters and run metadata
+            config={
+                    'model_type': args.model,
+                    'k': args.k,
+                    'dataset': args.dataset,
+                    'keywords': args.keywords,
+                    'keyword_num': args.keyword_num
+                    },
+            group='performance_in_context_learning',
+            job_type='evaluation'
+            )
 
 # load the demonstration pickle file
 with open(args.demonstration_file, 'rb') as f:
