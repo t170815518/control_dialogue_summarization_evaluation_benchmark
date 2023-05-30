@@ -83,12 +83,16 @@ elif args.model == 'google/mt5-xxl':
     model = AutoModelForSeq2SeqLM.from_pretrained(args.model, device_map="auto", torch_dtype=torch.float16)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
 elif 'llama' in args.model or 'alpaca' in args.model:
-    model = LlamaForCausalLM.from_pretrained(args.model, device_map="auto")
+    model = LlamaForCausalLM.from_pretrained(args.model, device_map="auto", torch_dtype=torch.float16)
     tokenizer = LlamaTokenizer.from_pretrained(args.model)
 else:
     model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map='auto')
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-    logging.info("device_map: {}".format(model.hf_device_map))
+    try:
+        logging.info("device_map: {}".format(model.hf_device_map))
+    except AttributeError:
+        # send model to GPU
+        model = model.to(DEVICE)
 
 logging.info("Start to prompt the model")
 run_id2pred_summaries = {}

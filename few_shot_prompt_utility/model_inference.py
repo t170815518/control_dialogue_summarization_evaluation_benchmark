@@ -14,6 +14,8 @@ def prompt_llm(model, tokenizer, prompt_text: str, is_gpt_style: bool = False, s
     :param is_gpt_style: bool, True means the model is GPT-style, False means a T5-style llm
     :return: the response text
     """
+    if isinstance(prompt_text, list):
+        prompt_text = prompt_text[0]
     # tokenize dialogue data
     device_count = torch.cuda.device_count()
     if device_count > 1:
@@ -31,7 +33,7 @@ def prompt_llm(model, tokenizer, prompt_text: str, is_gpt_style: bool = False, s
         y_ids = model.generate(X, max_length=50, do_sample=False, eos_token_id=2, early_stopping=True, num_beams=5)
     y = tokenizer.decode(y_ids[0], skip_special_tokens=True)
     if is_gpt_style:
-        y = y.strip().split('Summary:')[-1].strip()
+        y = re.split(r'Summary( with keywords \[.+\])?:', y)[-1].strip()
     else:  # remove r"<extra_id_\d+>" from y
         # if kwargs has the key 'spans_to_fill'
         if spans_to_fill is None:  # direct prompt of mT5
