@@ -45,13 +45,14 @@ def generate_for_k(k: int):
             results_id[run_id][test_id] = demonstrations['id']
             results[run_id][test_id] = (test_sample, demonstrations)
     # export results_id to json
-    with open(f'demonstration_{DATASET}_k{k}.json', 'w') as f:
+    dataset_name = DATASET.replace('/', '_')  # replace / in DATASET with _
+    with open(f'demonstration_{dataset_name}_k{k}.json', 'w') as f:
         json.dump(results_id, f)
     # export results to pickle
-    with open(f'demonstration_{DATASET}_k{k}.pickle', 'wb') as f:
+    with open(f'demonstration_{dataset_name}_k{k}.pickle', 'wb') as f:
         pickle.dump(results, f)
     # load the results from pickle for validation purpose
-    with open(f'demonstration_{DATASET}_k{k}.pickle', 'rb') as f:
+    with open(f'demonstration_{dataset_name}_k{k}.pickle', 'rb') as f:
         pickle.load(f)
         print('Validation succeeds')
 
