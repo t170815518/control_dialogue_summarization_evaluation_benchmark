@@ -24,9 +24,13 @@ def evaluate_response_summaries(run_id2pred_summaries: dict, run_id2gold_summari
                 continue
             scores = scorer.score(pred_summary, gold_summary)
             scores_in_run.append(scores)
+
+            prompt_text = run_id2prompts[run_id][i]
+            if isinstance(prompt_text, list):
+                prompt_text = prompt_text[0]
             summary_text_row = {
                     'run_id': run_id,
-                    'prompt': run_id2prompts[run_id][i],
+                    'prompt': prompt_text,
                     'pred_summary': pred_summary,
                     'gold_summary': gold_summary
                     }

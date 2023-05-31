@@ -79,7 +79,7 @@ logging.info('device count = {}'.format(torch.cuda.device_count()))
 if args.model in ['google/mt5-xl', 'google/mt5-base']:
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     model = MT5ForConditionalGeneration.from_pretrained(args.model).to(DEVICE)
-elif args.model == 'google/mt5-xxl':
+elif args.model in ['google/mt5-xxl', 'google/flan-t5-xl']:
     model = AutoModelForSeq2SeqLM.from_pretrained(args.model, device_map="auto", torch_dtype=torch.float16)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
 elif 'llama' in args.model or 'alpaca' in args.model:
