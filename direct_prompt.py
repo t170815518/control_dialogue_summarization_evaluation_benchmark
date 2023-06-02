@@ -23,9 +23,7 @@ except ImportError:  # old huggingface does not have LlmaTimeForCausalLM
 from few_shot_prompt_utility import format_prompt_from_demo_pairs, prompt_llm, evaluate_response_summaries, \
     generate_tf_idf_keywords
 
-
-
-# wandb.login(key='3138e1b24deb278ed045d0dedb39511d3a96245b')
+wandb.login(key='3138e1b24deb278ed045d0dedb39511d3a96245b')
 
 # set up argument parser
 parser = argparse.ArgumentParser()
