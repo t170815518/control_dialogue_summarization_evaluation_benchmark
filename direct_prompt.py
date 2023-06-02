@@ -87,7 +87,10 @@ elif 'llama' in args.model or 'alpaca' in args.model:
     tokenizer = LlamaTokenizer.from_pretrained(args.model)
 else:
     model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map='auto')
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    if 'opt' in args.model:
+        tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
     try:
         logging.info("device_map: {}".format(model.hf_device_map))
     except AttributeError:
@@ -116,6 +119,12 @@ for run_id, prompts in run_id2prompts.items():
             tokens = tokenizer.encode(prompt, return_tensors="pt")
             # log the complete list of tokens id
             logging.info("Tokens: {}".format(tokens.tolist()))
+            try:
+                tokens = tokenizer.encode(prompt, return_tensors="pt")
+                # log the complete list of tokens id
+                logging.info("Tokens: {}".format(tokens.tolist()))
+            except TypeError:
+                pass
             response = None
         run_id2pred_summaries[run_id].append(response)
 
