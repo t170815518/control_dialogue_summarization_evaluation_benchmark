@@ -34,7 +34,9 @@ parser.add_argument('--dataset', type=str, default='samsum', help='the dataset t
 parser.add_argument('--keywords', type=str, default=None, choices=['tfidf'], help='the types of keywords to use')
 parser.add_argument('--keyword_num', type=int, default=3, help='the number of keywords to use')
 parser.add_argument('--log', type=bool, default=True, help='whether to log the results to wandb')
-parser.add_argument('--control', type=str, default='entity', choices=['length', 'entity'], help='the type of control')
+parser.add_argument('--control', type=str, default=None, choices=['length', 'entity'], help='the type of control')
+parser.add_argument('--replace_name', type=bool, default=False, help='whether to replace the speaker name with '
+                                                                     '#Person1# as DialogSum')
 # parse the arguments
 args = parser.parse_args()
 
@@ -76,7 +78,7 @@ if args.control == 'entity':
 elif args.control == 'length':
     run_id2demo_pairs = generate_control_length(run_id2demo_pairs)
 
-run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2demo_pairs, args.model)
+run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2demo_pairs, args.model, args.replace_name)
 
 logging.info("load the model {}".format(args.model))
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
