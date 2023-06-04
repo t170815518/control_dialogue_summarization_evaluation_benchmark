@@ -1,6 +1,7 @@
 import random
 import numpy as np
 import nltk
+import string
 from nltk.corpus import stopwords
 import logging
 
@@ -10,7 +11,7 @@ nltk.download('punkt')
 STOP_WORDS = set(stopwords.words('english'))
 
 
-def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = None, keyword_prompts: list = None):
+def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = None, keyword_prompts: list = None, control_length: int = None):
     """
     Formulate the dialogue and summary (optional) as the prompt text for model inference.
     :param dialogue: str, the dialogue text
@@ -18,13 +19,19 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
     :return: str, the prompt text
     """
     if keyword_prompts is None:
-        prompt_text = 'Summarize the conversation:\n'
+        if control_length is None:
+            prompt_text = 'Summarize the conversation:\n'
+        else:
+            prompt_text = 'Summarize the conversation with the defined length:\n'
     else:
         prompt_text = 'Summarize the conversation with keywords:\n'
     dialogue = dialogue.strip().replace("\r", "")
     prompt_text += dialogue + '\n'
     if keyword_prompts is None:
-        prompt_text += 'Summary: '
+        if control_length is None:
+            prompt_text += 'Summary:'
+        else:
+            prompt_text += 'Summary with the length of {} words:'.format(control_length)
     else:
         prompt_text += 'Summary with keywords {}: '.format(keyword_prompts)
     if summary:
@@ -60,44 +67,68 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str):
                 run_id2prompts[run_id].append(prompt)
                 run_id2gold_summaries[run_id].append(test_sample['summary'])
             elif len(elements) == 3:
-                test_sample, demonstrations, keywords = elements
                 prompt = ''
-                for demo_dialogue, demo_summary in zip(demonstrations['dialogue'], demonstrations['summary']):
+                # check if 3rd element is list or int
+                if isinstance(elements[2], list):
+                    test_sample, demonstrations, keywords = elements
+                    for demo_dialogue, demo_summary in zip(demonstrations['dialogue'], demonstrations['summary']):
+                        if 'mt5' in model:
+                            # double \n
+                            # for space between demonstrations
+                            prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary) + '\n' + '\n'
+                        else:
+                            # use ntkl to extract not-stop-word keywords from demo_summary
+                            # and use them as the keywords for the prompt as the order of the keywords in the summary
+                            demo_keywords = nltk.word_tokenize(demo_summary)
+                            demo_keywords = [word for word in demo_keywords if word.isalpha() and word not in STOP_WORDS]
+                            keyword_num = len(keywords[0])
+                            demo_keywords_id = np.random.choice(range(len(demo_keywords)), min(keyword_num,
+                                                                                               len(demo_keywords)),
+                                                                replace=False)
+                            demo_keywords_id = sorted(demo_keywords_id)
+                            demo_keywords = [demo_keywords[i] for i in demo_keywords_id]
+                            prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary, demo_keywords) \
+                                      + '\n' \
+                                      + '\n'
                     if 'mt5' in model:
-                        # double \n
-                        # for space between demonstrations
-                        prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary) + '\n' + '\n'
+                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model)
+                        # join each keyword with strings '<extra_id_i>', where i is incrementing from 0
+                        span_to_fill = '<extra_id_0> '  # empty space is needed
+                        mask_id = 1
+                        if len(keywords) > 1:  # unexpected behavior
+                            logging.warning(f'Number of keywords is {len(keywords)} for run_id {run_id} test_id {test_id}')
+                        for keyword in keywords[0]:
+                            span_to_fill += keyword + ' <extra_id_{}> '.format(mask_id)
+                            mask_id += 1
+                        prompt += span_to_fill.strip()
+                        run_id2prompts[run_id].append([prompt, span_to_fill.strip()])
                     else:
-                        # use ntkl to extract not-stop-word keywords from demo_summary
-                        # and use them as the keywords for the prompt as the order of the keywords in the summary
-                        demo_keywords = nltk.word_tokenize(demo_summary)
-                        demo_keywords = [word for word in demo_keywords if word.isalpha() and word not in STOP_WORDS]
-                        keyword_num = len(keywords[0])
-                        demo_keywords_id = np.random.choice(range(len(demo_keywords)), min(keyword_num,
-                                                                                           len(demo_keywords)),
-                                                            replace=False)
-                        demo_keywords_id = sorted(demo_keywords_id)
-                        demo_keywords = [demo_keywords[i] for i in demo_keywords_id]
-                        prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary, demo_keywords) \
+                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
+                                                                  keyword_prompts=keywords[0])
+                        run_id2prompts[run_id].append([prompt, keywords[0]])
+                    run_id2gold_summaries[run_id].append(test_sample['summary'])
+                elif isinstance(elements[2], int):
+                    test_sample, demonstrations, control_length = elements
+                    for demo_dialogue, demo_summary in zip(demonstrations['dialogue'], demonstrations['summary']):
+                        # count the words length (excluding punctuation) using ntlk
+                        words = [word.lower() for word in nltk.word_tokenize(demo_summary) if word not in
+                                 string.punctuation]
+                        prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary, control_length=len(words)) \
                                   + '\n' \
                                   + '\n'
-                if 'mt5' in model:
-                    prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model)
-                    # join each keyword with strings '<extra_id_i>', where i is incrementing from 0
-                    span_to_fill = '<extra_id_0> '  # empty space is needed
-                    mask_id = 1
-                    if len(keywords) > 1:  # unexpected behavior
-                        logging.warning(f'Number of keywords is {len(keywords)} for run_id {run_id} test_id {test_id}')
-                    for keyword in keywords[0]:
-                        span_to_fill += keyword + ' <extra_id_{}> '.format(mask_id)
-                        mask_id += 1
-                    prompt += span_to_fill.strip()
-                    run_id2prompts[run_id].append([prompt, span_to_fill.strip()])
+                    if 'mt5' in model:
+                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model, control_length=control_length)
+                        # join each keyword with strings '<extra_id_i>', where i is incrementing from 0
+                        span_to_fill = '<extra_id_0> '  # empty space is needed
+                        prompt += span_to_fill.strip()
+                        run_id2prompts[run_id].append([prompt, span_to_fill.strip()])
+                    else:
+                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
+                                                                  control_length=control_length)
+                        run_id2prompts[run_id].append([prompt, control_length])
+                    run_id2gold_summaries[run_id].append(test_sample['summary'])
                 else:
-                    prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
-                                                              keyword_prompts=keywords[0])
-                    run_id2prompts[run_id].append([prompt, keywords[0]])
-                run_id2gold_summaries[run_id].append(test_sample['summary'])
+                    raise ValueError('The 3rd element as control signals of the demo pair is neither a list nor an int.')
             else:
                 raise ValueError('The number of elements in the demo_pairs is not correct.')
     return run_id2prompts, run_id2gold_summaries
