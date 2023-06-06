@@ -7,6 +7,7 @@ import sys
 import json
 from io import StringIO
 import pandas as pd
+import numpy as np
 from datetime import datetime
 import argparse
 import wandb
@@ -128,28 +129,39 @@ for run_id, group_df in tqdm(grouped):
         prompt_text = row['prompt']
         gold_summary = row['gold_summary']
 
-        # tokenize to get input_ids
-        prompt_text_ids = tokenizer.encode(prompt_text, return_tensors="pt")
-        summary_ids = tokenizer.encode(gold_summary, return_tensors="pt")
-        eos_token_id = torch.tensor([[tokenizer.eos_token_id]])
-        if device_count > 1:
-            input_ids = torch.cat([prompt_text_ids, summary_ids, eos_token_id], dim=-1).to(device_count - 1)
-        else:
-            input_ids = torch.cat([prompt_text_ids, summary_ids, eos_token_id], dim=-1).to(DEVICE)
-        target_ids = input_ids.clone()
-        # mask out the elements from prompt_text_ids in target_ids to -100 so that context is not counted in loss
-        target_ids[:, :prompt_text_ids.shape[-1]] = -100
+        try:
+            # tokenize to get input_ids
+            prompt_text_ids = tokenizer.encode(prompt_text, return_tensors="pt")
+            summary_ids = tokenizer.encode(gold_summary, return_tensors="pt")
+            eos_token_id = torch.tensor([[tokenizer.eos_token_id]])
+            if device_count > 1:
+                input_ids = torch.cat([prompt_text_ids, summary_ids, eos_token_id], dim=-1).to(device_count - 1)
+            else:
+                input_ids = torch.cat([prompt_text_ids, summary_ids, eos_token_id], dim=-1).to(DEVICE)
+            target_ids = input_ids.clone()
+            # mask out the elements from prompt_text_ids in target_ids to -100 so that context is not counted in loss
+            target_ids[:, :prompt_text_ids.shape[-1]] = -100
 
-        # get the perplexity
-        with torch.no_grad():
-            outputs = model(input_ids, labels=target_ids)
-            neg_log_likelihood = outputs.loss
-            perplexity = torch.exp(neg_log_likelihood)
-        # append row to perplexities_df
-        perplexities_df.append({'run_id': run_id,
-                                'prompt': prompt_text,
-                                'gold_summary': gold_summary,
-                                'perplexity': perplexity.item()})
+            # get the perplexity
+            with torch.no_grad():
+                outputs = model(input_ids, labels=target_ids)
+                neg_log_likelihood = outputs.loss
+                perplexity = torch.exp(neg_log_likelihood)
+            # append row to perplexities_df
+            perplexities_df.append({'run_id': run_id,
+                                    'prompt': prompt_text,
+                                    'gold_summary': gold_summary,
+                                    'perplexity': perplexity.item()})
+        except Exception as e:
+            logging.info('[error] {}'.format(e))
+            logging.info('[error] prompt_text: {}'.format(prompt_text))
+            logging.info('[error] gold_summary: {}'.format(gold_summary))
+            # append row to perplexities_df
+            perplexities_df.append({'run_id': run_id,
+                                    'prompt': prompt_text,
+                                    'gold_summary': gold_summary,
+                                    'perplexity': np.nan})
+
 
 # convert perplexities_df to df
 perplexities_df = pd.DataFrame(perplexities_df)
