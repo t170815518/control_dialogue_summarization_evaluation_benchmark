@@ -108,7 +108,10 @@ elif 'llama' in args.model or 'alpaca' in args.model:
     model = LlamaForCausalLM.from_pretrained(args.model, device_map="auto", torch_dtype=torch.float16)
     tokenizer = LlamaTokenizer.from_pretrained(args.model)
 else:
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map='auto')
+    try:
+        model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map='auto')
+    except TypeError:  # when __init__() got an unexpected keyword argument 'device_map'
+        model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16)
     if 'opt' in args.model:
         tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
     else:
@@ -127,17 +130,17 @@ for run_id, group_df in tqdm(grouped):
     # iterate the rows of group_df
     for _, row in tqdm(group_df.iterrows()):
         prompt_text = row['prompt']
-        gold_summary = row['gold_summary']
-
+        pred_summary = row['pred_summary']
+        # ref: https://huggingface.co/docs/transformers/perplexity
         try:
             # tokenize to get input_ids
             prompt_text_ids = tokenizer.encode(prompt_text, return_tensors="pt")
-            summary_ids = tokenizer.encode(gold_summary, return_tensors="pt")
+            summary_ids = tokenizer.encode(pred_summary, return_tensors="pt")
             eos_token_id = torch.tensor([[tokenizer.eos_token_id]])
             if device_count > 1:
-                input_ids = torch.cat([prompt_text_ids, summary_ids, eos_token_id], dim=-1).to(device_count - 1)
+                input_ids = torch.cat([prompt_text_ids, summary_ids], dim=-1).to(device_count - 1)
             else:
-                input_ids = torch.cat([prompt_text_ids, summary_ids, eos_token_id], dim=-1).to(DEVICE)
+                input_ids = torch.cat([prompt_text_ids, summary_ids], dim=-1).to(DEVICE)
             target_ids = input_ids.clone()
             # mask out the elements from prompt_text_ids in target_ids to -100 so that context is not counted in loss
             target_ids[:, :prompt_text_ids.shape[-1]] = -100
