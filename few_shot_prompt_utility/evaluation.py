@@ -3,7 +3,8 @@ import numpy as np
 from rouge_score import rouge_scorer
 
 
-def evaluate_response_summaries(run_id2pred_summaries: dict, run_id2gold_summaries: dict, run_id2prompts: dict):
+def evaluate_response_summaries(run_id2pred_summaries: dict, run_id2gold_summaries: dict, run_id2prompts: dict,
+                                run_id2raw_outputs: dict = None):
     """
     Evaluate the quality of the generated summaries.
     :param run_id2pred_summaries: a dictionary of run_id to a list of generated summaries
@@ -34,6 +35,8 @@ def evaluate_response_summaries(run_id2pred_summaries: dict, run_id2gold_summari
                     'pred_summary': pred_summary,
                     'gold_summary': gold_summary
                     }
+            if run_id2raw_outputs is not None:
+                summary_text_row['raw_output'] = run_id2raw_outputs[run_id][i]
             summary_text_table.append(summary_text_row)
         summary_row = {
                 'run_id': run_id,

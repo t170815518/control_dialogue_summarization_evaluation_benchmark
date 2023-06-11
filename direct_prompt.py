@@ -106,9 +106,11 @@ else:
 
 logging.info("Start to prompt the model")
 run_id2pred_summaries = {}
+run_id2raw_outputs = {}
 for run_id, prompts in run_id2prompts.items():
     logging.info("Prompting the model for Run {}".format(run_id))
     run_id2pred_summaries[run_id] = []
+    run_id2raw_outputs[run_id] = []
     for prompt in tqdm.tqdm(prompts):
         is_gpt_style = args.model not in ['google/mt5-xl', 'google/mt5-base', 'google/mt5-xxl']
         try:
@@ -117,9 +119,10 @@ for run_id, prompts in run_id2prompts.items():
             else:
                 if isinstance(prompt, list):  # for mt5 with keywords
                     assert len(prompt) == 2
-                    response = prompt_llm(model, tokenizer, prompt[0], is_gpt_style, spans_to_fill=prompt[1])
+                    response, raw_output = prompt_llm(model, tokenizer, prompt[0], is_gpt_style, spans_to_fill=prompt[1])
                 else:  # direct prompt mt5
-                    response = prompt_llm(model, tokenizer, prompt, is_gpt_style)
+                    response, raw_output = prompt_llm(model, tokenizer, prompt, is_gpt_style)
+                run_id2raw_outputs[run_id].append(raw_output)
         except Exception as e:  # in case any error happens
             logging.info("Exception: {}".format(e))
             logging.info("Prompt: {}".format(prompt))
@@ -138,9 +141,11 @@ for run_id, prompts in run_id2prompts.items():
 logging.info("Start to evaluate the performance")
 if 'mt5' in args.model:
     run_id2prompts = {k: [x[0] for x in v] for k, v in run_id2prompts.items()}
-
-summary_table, summary_text_table = evaluate_response_summaries(run_id2pred_summaries, run_id2gold_summaries,
-                                                                run_id2prompts)
+    summary_table, summary_text_table = evaluate_response_summaries(run_id2pred_summaries, run_id2gold_summaries,
+                                                                    run_id2prompts, run_id2raw_outputs)
+else:
+    summary_table, summary_text_table = evaluate_response_summaries(run_id2pred_summaries, run_id2gold_summaries,
+                                                                    run_id2prompts)
 
 # save the summary table to wandb
 summary_table = pd.DataFrame(summary_table)
