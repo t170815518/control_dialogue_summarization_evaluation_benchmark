@@ -6,6 +6,7 @@ import sys
 import logging
 import json
 import pickle
+from datasets import load_dataset
 import argparse
 from datetime import datetime
 
@@ -37,6 +38,7 @@ parser.add_argument('--log', type=bool, default=True, help='whether to log the r
 parser.add_argument('--control', type=str, default=None, choices=['length', 'entity'], help='the type of control')
 parser.add_argument('--replace_name', type=bool, default=False, help='whether to replace the speaker name with '
                                                                      '#Person1# as DialogSum')
+parser.add_argument('--add_instruction', type=bool, default=False)
 # parse the arguments
 args = parser.parse_args()
 
@@ -66,9 +68,19 @@ if args.log:
             job_type='evaluation'
             )
 
-# load the demonstration pickle file
-with open(args.demonstration_file, 'rb') as f:
-    run_id2demo_pairs = pickle.load(f)
+if args.demonstration_file is None and args.k == 0:
+    test_dataset = load_dataset(args.dataset, split='test')
+    run_id = 0
+    results = {0: {}}
+    # iterate over test samples to generate k demonstrations
+    for test_sample in tqdm.tqdm(test_dataset, total=len(test_dataset)):
+        test_id = test_sample['id']
+        results[run_id][test_id] = (test_sample, {})
+    run_id2demo_pairs = results
+else:
+    # load the demonstration pickle file
+    with open(args.demonstration_file, 'rb') as f:
+        run_id2demo_pairs = pickle.load(f)
 
 if args.control == 'entity':
     if args.keywords == 'tfidf':
@@ -78,7 +90,8 @@ if args.control == 'entity':
 elif args.control == 'length':
     run_id2demo_pairs = generate_control_length(run_id2demo_pairs)
 
-run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2demo_pairs, args.model, args.replace_name)
+run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2demo_pairs, args.model, args.replace_name,
+                                                                      args.add_instruction)
 
 logging.info("load the model {}".format(args.model))
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

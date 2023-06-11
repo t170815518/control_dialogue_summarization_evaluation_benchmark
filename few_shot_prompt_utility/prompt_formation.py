@@ -5,14 +5,14 @@ import string
 from nltk.corpus import stopwords
 import logging
 
-
 nltk.download('stopwords')
 nltk.download('punkt')
 STOP_WORDS = set(stopwords.words('english'))
 
 
 def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = None, keyword_prompts: list = None,
-                                    control_length: int = None, is_replace_entity: bool = False):
+                                    control_length: int = None, is_replace_entity: bool = False,
+                                    is_add_instruction: bool = False):
     """
     Formulate the dialogue and summary (optional) as the prompt text for model inference.
     :param keyword_prompts: list of keywords for entity control
@@ -21,14 +21,16 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
     :return: str, the prompt text
     """
     speaker2replace_str = {}
-
-    if keyword_prompts is None:
-        if control_length is None:
-            prompt_text = 'Summarize the conversation:\n'
+    if is_add_instruction:
+        if keyword_prompts is None:
+            if control_length is None:
+                prompt_text = 'Summarize the conversation:\n'
+            else:
+                prompt_text = 'Summarize the conversation with the defined length:\n'
         else:
-            prompt_text = 'Summarize the conversation with the defined length:\n'
+            prompt_text = 'Summarize the conversation with keywords:\n'
     else:
-        prompt_text = 'Summarize the conversation with keywords:\n'
+        prompt_text = ''
     dialogue = dialogue.strip().replace("\r", "")
     if is_replace_entity:
         # Split each line with ':' (max_split=1), and get the set of speakers
@@ -65,10 +67,14 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
             prompt_text += summary + '</s>'
         return prompt_text
     else:
-        return prompt_text, speaker2replace_str
+        if is_replace_entity:
+            return prompt_text, speaker2replace_str
+        else:
+            return prompt_text
 
 
-def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replace_entity: bool = False):
+def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replace_entity: bool = False,
+                                  is_add_instruction: bool = False):
     """
     Format the prompt text from the demonstration pairs and save the prompt text to the file.
     :param run_id2demo_pairs: dict, loaded from pre-generated pickle file
@@ -83,15 +89,29 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
         for test_id, elements in demo_pairs.items():
             if len(elements) == 2:  # when no keywords
                 test_sample, demonstrations = elements
-                prompt = ''
+                if is_add_instruction:
+                    prompt = 'In this task, you are given an conversation. Your task is to summarize the ' \
+                             'conversation.:\n'
+                else:
+                    prompt = ''
                 gold_summary = test_sample['summary']
-                for demo_dialogue, demo_summary in zip(demonstrations['dialogue'], demonstrations['summary']):
-                    prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
-                                                              is_replace_entity=is_replace_entity) + '\n' + '\n'  # double \n
-                    # for space between demonstrations
+                test_id = 0
+                if len(demonstrations) > 0:
+                    for demo_id, (demo_dialogue, demo_summary) in enumerate(
+                            zip(demonstrations['dialogue'], demonstrations['summary'])):
+                        if is_add_instruction:
+                            prompt += 'Example {}:\n'.format(demo_id + 1)
+                        prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                  is_replace_entity=is_replace_entity,
+                                                                  is_add_instruction=not is_add_instruction) + '\n' +\
+                                  '\n'
+                        # double \n
+                        # for space between demonstrations
+                        test_id = demo_id
+                test_id += 1
                 if is_replace_entity:
                     prompt_text_, speaker2replace_str = formulate_record_to_prompt_text(test_sample['dialogue'], model,
-                                                           is_replace_entity=is_replace_entity)
+                                                                                        is_replace_entity=is_replace_entity)
                     prompt += prompt_text_
                     # replace gold_summary with speaker2replace_str
                     for speaker, replace_str in speaker2replace_str.items():
@@ -99,7 +119,11 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                         gold_summary = gold_summary.replace(speaker.lower(), replace_str)
                         gold_summary = gold_summary.replace(speaker[0].lower() + speaker[1:], replace_str)
                 else:
-                    prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model)
+                    if is_add_instruction:
+                        prompt += 'Example {}:\n'.format(test_id + 1)
+                    prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
+                                                              is_add_instruction=not is_add_instruction)
+
                 if 'mt5' in model:
                     prompt += '<extra_id_0>'
                 run_id2prompts[run_id].append(prompt)
@@ -120,14 +144,16 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                             # use ntkl to extract not-stop-word keywords from demo_summary
                             # and use them as the keywords for the prompt as the order of the keywords in the summary
                             demo_keywords = nltk.word_tokenize(demo_summary)
-                            demo_keywords = [word for word in demo_keywords if word.isalpha() and word not in STOP_WORDS]
+                            demo_keywords = [word for word in demo_keywords if
+                                             word.isalpha() and word not in STOP_WORDS]
                             keyword_num = len(keywords[0])
                             demo_keywords_id = np.random.choice(range(len(demo_keywords)), min(keyword_num,
                                                                                                len(demo_keywords)),
                                                                 replace=False)
                             demo_keywords_id = sorted(demo_keywords_id)
                             demo_keywords = [demo_keywords[i] for i in demo_keywords_id]
-                            prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary, demo_keywords) \
+                            prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                      demo_keywords) \
                                       + '\n' \
                                       + '\n'
                     if 'mt5' in model:
@@ -136,13 +162,15 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                         span_to_fill = '<extra_id_0> '  # empty space is needed
                         mask_id = 1
                         if len(keywords) > 1:  # unexpected behavior
-                            logging.warning(f'Number of keywords is {len(keywords)} for run_id {run_id} test_id {test_id}')
+                            logging.warning(
+                                    f'Number of keywords is {len(keywords)} for run_id {run_id} test_id {test_id}')
                         for keyword in keywords[0]:
                             span_to_fill += keyword + ' <extra_id_{}> '.format(mask_id)
                             mask_id += 1
                         prompt += span_to_fill.strip()
                         run_id2prompts[run_id].append([prompt, span_to_fill.strip()])
                     else:
+                        # todo: keywords + name replaced?
                         prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
                                                                   keyword_prompts=keywords[0])
                         run_id2prompts[run_id].append([prompt, keywords[0]])
@@ -153,11 +181,13 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                         # count the words length (excluding punctuation) using ntlk
                         words = [word.lower() for word in nltk.word_tokenize(demo_summary) if word not in
                                  string.punctuation]
-                        prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary, control_length=len(words)) \
+                        prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                  control_length=len(words)) \
                                   + '\n' \
                                   + '\n'
                     if 'mt5' in model:
-                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model, control_length=control_length)
+                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
+                                                                  control_length=control_length)
                         # join each keyword with strings '<extra_id_i>', where i is incrementing from 0
                         span_to_fill = '<extra_id_0> '  # empty space is needed
                         prompt += span_to_fill.strip()
@@ -168,7 +198,8 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                         run_id2prompts[run_id].append([prompt, control_length])
                     run_id2gold_summaries[run_id].append(test_sample['summary'])
                 else:
-                    raise ValueError('The 3rd element as control signals of the demo pair is neither a list nor an int.')
+                    raise ValueError(
+                            'The 3rd element as control signals of the demo pair is neither a list nor an int.')
             else:
                 raise ValueError('The number of elements in the demo_pairs is not correct.')
     return run_id2prompts, run_id2gold_summaries
