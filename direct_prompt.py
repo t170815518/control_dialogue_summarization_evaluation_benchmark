@@ -139,15 +139,13 @@ for run_id, prompts in run_id2prompts.items():
         except Exception as e:  # in case any error happens
             logging.info("Exception: {}".format(e))
             logging.info("Prompt: {}".format(prompt))
-            tokens = tokenizer.encode(prompt, return_tensors="pt")
             # log the complete list of tokens id
-            logging.info("Tokens: {}".format(tokens.tolist()))
             try:
                 tokens = tokenizer.encode(prompt, return_tensors="pt")
                 # log the complete list of tokens id
                 logging.info("Tokens: {}".format(tokens.tolist()))
-            except TypeError:
-                pass
+            except TypeError as e:
+                logging.info('[Error during tokenization] {}'.format(e))
             response = None
         run_id2pred_summaries[run_id].append(response)
 
