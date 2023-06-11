@@ -12,7 +12,7 @@ STOP_WORDS = set(stopwords.words('english'))
 
 def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = None, keyword_prompts: list = None,
                                     control_length: int = None, is_replace_entity: bool = False,
-                                    is_add_instruction: bool = False):
+                                    is_add_instruction: bool = True, is_focus_planning: bool = False):
     """
     Formulate the dialogue and summary (optional) as the prompt text for model inference.
     :param keyword_prompts: list of keywords for entity control
@@ -28,7 +28,10 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
             else:
                 prompt_text = 'Summarize the conversation with the defined length:\n'
         else:
-            prompt_text = 'Summarize the conversation with keywords:\n'
+            if is_focus_planning:
+                prompt_text = 'Summarize the conversation with the focus perspectives provided:\n'
+            else:
+                prompt_text = 'Summarize the conversation with keywords:\n'
     else:
         prompt_text = ''
     dialogue = dialogue.strip().replace("\r", "")
@@ -54,7 +57,10 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
         else:
             prompt_text += 'Summary with the length of {} words:'.format(control_length)
     else:
-        prompt_text += 'Summary with keywords {}: '.format(keyword_prompts)
+        if is_focus_planning:
+            prompt_text += 'Summary with the focus perspectives {}: '.format(keyword_prompts)
+        else:
+            prompt_text += 'Summary with keywords {}: '.format(keyword_prompts)
     if summary:
         summary = summary.strip().replace("\n", "").replace("\r", "")
         if is_replace_entity:
@@ -74,7 +80,7 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
 
 
 def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replace_entity: bool = False,
-                                  is_add_instruction: bool = False):
+                                  is_add_instruction: bool = False, is_focus_planning: bool = False):
     """
     Format the prompt text from the demonstration pairs and save the prompt text to the file.
     :param run_id2demo_pairs: dict, loaded from pre-generated pickle file
@@ -129,35 +135,47 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                 run_id2prompts[run_id].append(prompt)
 
                 run_id2gold_summaries[run_id].append(gold_summary)
-            elif len(elements) == 3:
+            elif len(elements) == 3:  # when there are control signals
                 assert is_replace_entity is False
                 prompt = ''
                 # check if 3rd element is list or int
                 if isinstance(elements[2], list):
                     test_sample, demonstrations, keywords = elements
+                    keywords_id = 0
                     for demo_dialogue, demo_summary in zip(demonstrations['dialogue'], demonstrations['summary']):
+                        keywords_id += 1
                         if 'mt5' in model:
                             # double \n
                             # for space between demonstrations
-                            prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary) + '\n' + '\n'
-                        else:
-                            # use ntkl to extract not-stop-word keywords from demo_summary
-                            # and use them as the keywords for the prompt as the order of the keywords in the summary
-                            demo_keywords = nltk.word_tokenize(demo_summary)
-                            demo_keywords = [word for word in demo_keywords if
-                                             word.isalpha() and word not in STOP_WORDS]
-                            keyword_num = len(keywords[0])
-                            demo_keywords_id = np.random.choice(range(len(demo_keywords)), min(keyword_num,
-                                                                                               len(demo_keywords)),
-                                                                replace=False)
-                            demo_keywords_id = sorted(demo_keywords_id)
-                            demo_keywords = [demo_keywords[i] for i in demo_keywords_id]
                             prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
-                                                                      demo_keywords) \
-                                      + '\n' \
-                                      + '\n'
+                                                                      is_focus_planning=is_focus_planning) + '\n' + '\n'
+                        else:
+                            if is_focus_planning:
+                                prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                          keywords[keywords_id],
+                                                                          is_focus_planning=is_focus_planning) \
+                                          + '\n' \
+                                          + '\n'
+                            else:
+                                # use ntkl to extract not-stop-word keywords from demo_summary
+                                # and use them as the keywords for the prompt as the order of the keywords in the summary
+                                demo_keywords = nltk.word_tokenize(demo_summary)
+                                demo_keywords = [word for word in demo_keywords if
+                                                 word.isalpha() and word not in STOP_WORDS]
+                                keyword_num = len(keywords[0])
+                                demo_keywords_id = np.random.choice(range(len(demo_keywords)), min(keyword_num,
+                                                                                                   len(demo_keywords)),
+                                                                    replace=False)
+                                demo_keywords_id = sorted(demo_keywords_id)
+                                demo_keywords = [demo_keywords[i] for i in demo_keywords_id]
+                                prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                          demo_keywords) \
+                                          + '\n' \
+                                          + '\n'
                     if 'mt5' in model:
-                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model)
+                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
+                                                                  keyword_prompts=keywords[0],
+                                                                  is_focus_planning=is_focus_planning)
                         # join each keyword with strings '<extra_id_i>', where i is incrementing from 0
                         span_to_fill = '<extra_id_0> '  # empty space is needed
                         mask_id = 1
@@ -172,7 +190,8 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                     else:
                         # todo: keywords + name replaced?
                         prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
-                                                                  keyword_prompts=keywords[0])
+                                                                  keyword_prompts=keywords[0],
+                                                                  is_focus_planning=is_focus_planning)
                         run_id2prompts[run_id].append([prompt, keywords[0]])
                     run_id2gold_summaries[run_id].append(test_sample['summary'])
                 elif isinstance(elements[2], int):
