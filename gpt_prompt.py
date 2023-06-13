@@ -94,7 +94,7 @@ else:
     # issue warning
     logging.warning('No control signal is used.')
 
-run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2demo_pairs, args.model, args.replace_name,
+run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2demo_pairs, 'gpt-3', args.replace_name,
                                                                       args.add_instruction,
                                                                       is_focus_planning=args.control == 'focus')
 
@@ -126,6 +126,7 @@ for run_id, prompts in run_id2prompts.items():
                 logging.info('[Error during tokenization] {}'.format(e))
             response = None
         run_id2pred_summaries[run_id].append(response)
+    break  # only run one run for now
 
 logging.info("Start to evaluate the performance")
 summary_table, summary_text_table = evaluate_response_summaries(run_id2pred_summaries, run_id2gold_summaries,
