@@ -22,7 +22,7 @@ try:
 except ImportError:  # old huggingface does not have LlmaTimeForCausalLM
     from transformers import AutoTokenizer, MT5ForConditionalGeneration, AutoModelForSeq2SeqLM, AutoModelForCausalLM
 from few_shot_prompt_utility import format_prompt_from_demo_pairs, prompt_llm, evaluate_response_summaries, \
-    generate_tf_idf_keywords, generate_control_length
+    generate_tf_idf_keywords, generate_control_length, generate_focus_planning
 
 wandb.login(key='3138e1b24deb278ed045d0dedb39511d3a96245b')
 
@@ -35,7 +35,8 @@ parser.add_argument('--dataset', type=str, default='samsum', help='the dataset t
 parser.add_argument('--keywords', type=str, default=None, choices=['tfidf'], help='the types of keywords to use')
 parser.add_argument('--keyword_num', type=int, default=3, help='the number of keywords to use')
 parser.add_argument('--log', type=bool, default=True, help='whether to log the results to wandb')
-parser.add_argument('--control', type=str, default=None, choices=['length', 'entity'], help='the type of control')
+parser.add_argument('--control', type=str, default=None, choices=['length', 'entity', 'focus'],
+                    help='the type of control')
 parser.add_argument('--replace_name', type=bool, default=False, help='whether to replace the speaker name with '
                                                                      '#Person1# as DialogSum')
 parser.add_argument('--add_instruction', type=bool, default=False)
@@ -89,9 +90,16 @@ if args.control == 'entity':
         raise NotImplementedError
 elif args.control == 'length':
     run_id2demo_pairs = generate_control_length(run_id2demo_pairs)
+elif args.control == 'focus':
+    assert args.dataset == 'samsum', 'Only samsum dataset has focus control'
+    run_id2demo_pairs = generate_focus_planning(run_id2demo_pairs)
+else:
+    # issue warning
+    logging.warning('No control signal is used.')
 
 run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2demo_pairs, args.model, args.replace_name,
-                                                                      args.add_instruction)
+                                                                      args.add_instruction,
+                                                                      is_focus_planning=args.control == 'focus')
 
 logging.info("load the model {}".format(args.model))
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

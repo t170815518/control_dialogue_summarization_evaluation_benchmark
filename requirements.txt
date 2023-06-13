@@ -12,4 +12,4 @@ protobuf<=3.20.1
 py7zr
 accelerate
 wandb
-rouge_score
+rouge_scoreopenai
