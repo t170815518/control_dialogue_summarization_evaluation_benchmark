@@ -137,9 +137,13 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                 run_id2gold_summaries[run_id].append(gold_summary)
             elif len(elements) == 3:  # when there are control signals
                 assert is_replace_entity is False
-                prompt = ''
                 # check if 3rd element is list or int
-                if isinstance(elements[2], list):
+                if isinstance(elements[2], list):  # keywords signals are provided
+                    if is_add_instruction:
+                        prompt = 'In this task, you are given an conversation. Your task is to summarize the ' \
+                                 'conversation and include the keywords provided.:\n'
+                    else:
+                        prompt = ''
                     test_sample, demonstrations, keywords = elements
                     keywords_id = 0
                     for demo_dialogue, demo_summary in zip(demonstrations['dialogue'], demonstrations['summary']):
@@ -152,7 +156,8 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                         else:
                             if is_focus_planning:
                                 prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
-                                                                          keywords[keywords_id],
+                                                                          keyword_prompts=keywords[keywords_id],
+                                                                          is_add_instruction= not is_add_instruction,
                                                                           is_focus_planning=is_focus_planning) \
                                           + '\n' \
                                           + '\n'
@@ -169,7 +174,9 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                                 demo_keywords_id = sorted(demo_keywords_id)
                                 demo_keywords = [demo_keywords[i] for i in demo_keywords_id]
                                 prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
-                                                                          demo_keywords) \
+                                                                          demo_keywords,
+                                                                          is_add_instruction= not is_add_instruction,
+                                                                          is_focus_planning=is_focus_planning) \
                                           + '\n' \
                                           + '\n'
                     if 'mt5' in model:
@@ -195,6 +202,11 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                         run_id2prompts[run_id].append([prompt, keywords[0]])
                     run_id2gold_summaries[run_id].append(test_sample['summary'])
                 elif isinstance(elements[2], int):
+                    if is_add_instruction:
+                        prompt = 'In this task, you are given an conversation. Your task is to summarize the ' \
+                                 'conversation into the text with pre-defined length.:\n'
+                    else:
+                        prompt = ''
                     test_sample, demonstrations, control_length = elements
                     for demo_dialogue, demo_summary in zip(demonstrations['dialogue'], demonstrations['summary']):
                         # count the words length (excluding punctuation) using ntlk
