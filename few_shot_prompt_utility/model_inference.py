@@ -33,9 +33,11 @@ def prompt_llm(model, tokenizer, prompt_text: str, is_gpt_style: bool = False, s
     else:
         y_ids = model.generate(X, max_length=50, do_sample=False, eos_token_id=2, early_stopping=True, num_beams=5)
     y = tokenizer.decode(y_ids[0], skip_special_tokens=True)
+    raw_output = y
     # parse the generated text
     if is_gpt_style:
         y = re.split(r'Summary(( with keywords \[.+\])|( with the length of \d+ words))?:', y)[-1].strip()
+        return y
     else:  # remove r"<extra_id_\d+>" from y
         # if kwargs has the key 'spans_to_fill'
         logging.info('generated content {}'.format(y))
@@ -50,4 +52,5 @@ def prompt_llm(model, tokenizer, prompt_text: str, is_gpt_style: bool = False, s
             for i in range(len(spans_filled)):
                 formatted_response = formatted_response.replace('<extra_id_{}>'.format(i), spans_filled[i], 1)
             y = formatted_response
-    return y
+        return y, raw_output
+

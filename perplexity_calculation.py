@@ -153,16 +153,16 @@ for run_id, group_df in tqdm(grouped):
             # append row to perplexities_df
             perplexities_df.append({'run_id': run_id,
                                     'prompt': prompt_text,
-                                    'gold_summary': gold_summary,
+                                    'pred_summary': pred_summary,
                                     'perplexity': perplexity.item()})
         except Exception as e:
             logging.info('[error] {}'.format(e))
             logging.info('[error] prompt_text: {}'.format(prompt_text))
-            logging.info('[error] gold_summary: {}'.format(gold_summary))
+            logging.info('[error] pred_summary: {}'.format(pred_summary))
             # append row to perplexities_df
             perplexities_df.append({'run_id': run_id,
                                     'prompt': prompt_text,
-                                    'gold_summary': gold_summary,
+                                    'pred_summary': pred_summary,
                                     'perplexity': np.nan})
 
 
