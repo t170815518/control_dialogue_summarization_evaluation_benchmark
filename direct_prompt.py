@@ -151,7 +151,9 @@ for run_id, prompts in run_id2prompts.items():
 
 logging.info("Start to evaluate the performance")
 if 'mt5' in args.model:
-    run_id2prompts = {k: x for x in v for k, v in run_id2prompts.items()}
+    # check if the value of run_id2prompts is nested list
+    if isinstance(list(run_id2prompts.values())[0][0], list):
+        run_id2prompts = {k: [x[0] for x in v] for k, v in run_id2prompts.items()}
     summary_table, summary_text_table = evaluate_response_summaries(run_id2pred_summaries, run_id2gold_summaries,
                                                                     run_id2prompts, run_id2raw_outputs)
 else:
