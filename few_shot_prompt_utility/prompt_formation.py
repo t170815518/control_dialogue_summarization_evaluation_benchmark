@@ -55,7 +55,7 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
         if control_length is None:
             prompt_text += 'Summary: '
         else:
-            prompt_text += 'Summary with the length of {} words:'.format(control_length)
+            prompt_text += 'Summary with the length of {} words: '.format(control_length)
     else:
         if is_focus_planning:
             prompt_text += 'Summary with the focus perspectives {}: '.format(keyword_prompts)

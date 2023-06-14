@@ -36,8 +36,7 @@ def prompt_llm(model, tokenizer, prompt_text: str, is_gpt_style: bool = False, s
     raw_output = y
     # parse the generated text
     if is_gpt_style:
-        y = re.split(r'Summary(( with keywords \[.+\]) | ( with the length of \d+ words)|'
-                     r'(Summary with the focus perspectives \[.+\]))?:', y)[-1].strip()
+        y = re.split(r'Summary(( with keywords \[.+\])|( with the length of \d+ words)|( with the focus perspectives \[.+\]))?:', y)[-1].strip()
         return y
     else:  # remove r"<extra_id_\d+>" from y
         # if kwargs has the key 'spans_to_fill'
