@@ -3,6 +3,7 @@ tqdm
 datasets
 nltk
 pandas
+evaluate
 rouge
 scikit-learn
 transformers
@@ -12,4 +13,6 @@ protobuf<=3.20.1
 py7zr
 accelerate
 wandb
-rouge_scoreopenai
+rouge_score
+mosestokenizer
+openai

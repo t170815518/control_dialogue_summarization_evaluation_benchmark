@@ -108,22 +108,22 @@ for run_id, prompts in run_id2prompts.items():
     for prompt in tqdm.tqdm(prompts):
         try:  # prompt the model
             # call GPT model
-            response = openai.Completion.create(
-                    model="text-davinci-003",
-                    prompt=prompt,
-                    max_tokens=100,
-                    )
+            if isinstance(prompt, list):
+                response = openai.Completion.create(
+                        model="text-davinci-003",
+                        prompt=prompt[0],
+                        max_tokens=100,
+                        )
+            else:
+                response = openai.Completion.create(
+                        model="text-davinci-003",
+                        prompt=prompt,
+                        max_tokens=100,
+                        )
             response = response['choices'][0]['text']
         except Exception as e:  # in case any error happens
             logging.info("Exception: {}".format(e))
             logging.info("Prompt: {}".format(prompt))
-            # log the complete list of tokens id
-            try:
-                tokens = tokenizer.encode(prompt, return_tensors="pt")
-                # log the complete list of tokens id
-                logging.info("Tokens: {}".format(tokens.tolist()))
-            except TypeError as e:
-                logging.info('[Error during tokenization] {}'.format(e))
             response = None
         run_id2pred_summaries[run_id].append(response)
     break  # only run one run for now
