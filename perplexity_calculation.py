@@ -130,7 +130,11 @@ for run_id, group_df in tqdm(grouped):
     # iterate the rows of group_df
     for _, row in tqdm(group_df.iterrows()):
         prompt_text = row['prompt']
-        pred_summary = row['pred_summary']
+        # check if the model is mT5
+        if 'mt5' in args.model:
+            pred_summary = row['raw_output']
+        else:
+            pred_summary = row['pred_summary']
         # ref: https://huggingface.co/docs/transformers/perplexity
         try:
             # tokenize to get input_ids
