@@ -80,15 +80,20 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
 
 
 def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replace_entity: bool = False,
-                                  is_add_instruction: bool = False, is_focus_planning: bool = False):
+                                  is_add_instruction: bool = False, is_focus_planning: bool = False,
+                                  is_random_label: bool = False):
     """
     Format the prompt text from the demonstration pairs and save the prompt text to the file.
+    Double newline is used to separate the prompt text for each dialogue.
     :param run_id2demo_pairs: dict, loaded from pre-generated pickle file
     :param model: str, the name of the model
     :return: run_id2prompts, run_id2gold_summaries
     """
     run_id2prompts = {}
     run_id2gold_summaries = {}
+    summaries = [d_[1]['summary'] for d in run_id2demo_pairs.values() for d_ in d.values()]
+    # convert summaries, a nested list, to a list
+    summaries = [s for s_ in summaries for s in s_]
     for run_id, demo_pairs in run_id2demo_pairs.items():
         run_id2prompts[run_id] = []
         run_id2gold_summaries[run_id] = []
@@ -102,17 +107,18 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                     prompt = ''
                 gold_summary = test_sample['summary']
                 test_id = 0
-                if len(demonstrations) > 0:
+                if len(demonstrations) > 0:  # format the demonstration
                     for demo_id, (demo_dialogue, demo_summary) in enumerate(
                             zip(demonstrations['dialogue'], demonstrations['summary'])):
                         if is_add_instruction:
                             prompt += 'Example {}:\n'.format(demo_id + 1)
+                        if is_random_label:
+                            # randomly select a label from summaries as demo_summary
+                            demo_summary = random.choice(summaries)
                         prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
                                                                   is_replace_entity=is_replace_entity,
                                                                   is_add_instruction=not is_add_instruction) + '\n' +\
                                   '\n'
-                        # double \n
-                        # for space between demonstrations
                         test_id = demo_id
                 test_id += 1
                 if is_replace_entity:

@@ -40,6 +40,7 @@ parser.add_argument('--control', type=str, default=None, choices=['length', 'ent
 parser.add_argument('--replace_name', type=bool, default=False, help='whether to replace the speaker name with '
                                                                      '#Person1# as DialogSum')
 parser.add_argument('--add_instruction', type=bool, default=False)
+parser.add_argument('--random_label', type=bool, default=False, help='whether to use random labels')
 # parse the arguments
 args = parser.parse_args()
 
@@ -99,7 +100,8 @@ else:
 
 run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2demo_pairs, args.model, args.replace_name,
                                                                       args.add_instruction,
-                                                                      is_focus_planning=args.control == 'focus')
+                                                                      is_focus_planning=args.control == 'focus',
+                                                                      is_random_label=args.random_label)
 
 logging.info("load the model {}".format(args.model))
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
