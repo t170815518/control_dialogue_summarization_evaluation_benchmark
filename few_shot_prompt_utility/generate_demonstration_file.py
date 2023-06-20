@@ -4,6 +4,7 @@ a pickle file.
 These files ensure the models are tested with the same demonstrations.
 """
 
+import nltk
 from numpy import any
 import numpy as np
 import pickle
@@ -41,7 +42,9 @@ def generate_for_k(k: int, is_numerical_keywords: bool = False):
         # get all training data from train_dataset
         for train_sample in tqdm.tqdm(train_dataset, total=len(train_dataset)):
             # check if train_sample's summary contains numerical information
-            if any([char.isdigit() for char in train_sample['summary']]):
+            demo_keywords = [word for word in nltk.word_tokenize(train_sample['summary'])
+                             if word.isdigit()]
+            if len(demo_keywords) > 0:
                 numerical_demonstrations['id'].append(train_sample['id'])
                 numerical_demonstrations['dialogue'].append(train_sample['dialogue'])
                 numerical_demonstrations['summary'].append(train_sample['summary'])

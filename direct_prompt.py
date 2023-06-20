@@ -22,7 +22,7 @@ try:
 except ImportError:  # old huggingface does not have LlmaTimeForCausalLM
     from transformers import AutoTokenizer, MT5ForConditionalGeneration, AutoModelForSeq2SeqLM, AutoModelForCausalLM
 from few_shot_prompt_utility import format_prompt_from_demo_pairs, prompt_llm, evaluate_response_summaries, \
-    generate_tf_idf_keywords, generate_control_length, generate_focus_planning
+    generate_tf_idf_keywords, generate_control_length, generate_focus_planning, generate_numerical_keywords
 
 wandb.login(key='3138e1b24deb278ed045d0dedb39511d3a96245b')
 
@@ -32,8 +32,9 @@ parser.add_argument('--model', type=str, default='google/mt5-base', help='the na
 parser.add_argument('-k', type=int, default=1, help='the number of few-shot examples')
 parser.add_argument('--demonstration_file', type=str, default=None, help='the pre-generated demonstration file')
 parser.add_argument('--dataset', type=str, default='samsum', help='the dataset to evaluate on')
-parser.add_argument('--keywords', type=str, default=None, choices=['tfidf'], help='the types of keywords to use')
-parser.add_argument('--keyword_num', type=int, default=3, help='the number of keywords to use')
+parser.add_argument('--keywords', type=str, default=None, choices=['tfidf', 'numeric'],
+                    help='the types of keywords to use')
+parser.add_argument('--keyword_num', type=int, default=None, help='the number of keywords to use')
 parser.add_argument('--log', type=bool, default=True, help='whether to log the results to wandb')
 parser.add_argument('--control', type=str, default=None, choices=['length', 'entity', 'focus'],
                     help='the type of control')
@@ -43,6 +44,7 @@ parser.add_argument('--add_instruction', type=bool, default=False)
 parser.add_argument('--random_label', type=bool, default=False, help='whether to use random labels')
 # parse the arguments
 args = parser.parse_args()
+
 
 # set up log files
 logging.basicConfig(
@@ -70,6 +72,9 @@ if args.log:
             job_type='evaluation'
             )
 
+if args.keywords == 'numeric' and args.keyword_num is not None:
+    logging.warning('The number of keywords is not used for numerical keywords.')
+
 if args.demonstration_file is None and args.k == 0:
     test_dataset = load_dataset(args.dataset, split='test')
     run_id = 0
@@ -87,6 +92,8 @@ else:
 if args.control == 'entity':
     if args.keywords == 'tfidf':
         run_id2demo_pairs = generate_tf_idf_keywords(run_id2demo_pairs, args.keyword_num)
+    elif args.keywords == 'numeric':
+        run_id2demo_pairs = generate_numerical_keywords(run_id2demo_pairs)
     else:
         raise NotImplementedError
 elif args.control == 'length':
@@ -101,7 +108,8 @@ else:
 run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2demo_pairs, args.model, args.replace_name,
                                                                       args.add_instruction,
                                                                       is_focus_planning=args.control == 'focus',
-                                                                      is_random_label=args.random_label)
+                                                                      is_random_label=args.random_label,
+                                                                      is_numerical_label=args.keywords == 'numeric')
 
 logging.info("load the model {}".format(args.model))
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

@@ -1,14 +1,16 @@
 import logging
 import nltk
 import string
+import spacy
 import copy
 from sklearn.feature_extraction.text import TfidfVectorizer
 from datasets import load_dataset
 
 
-
 nltk.download('stopwords')
 nltk.download('punkt')
+
+nlp = spacy.load("en_core_web_sm")
 
 
 def generate_tf_idf_keywords(run_id2demo_pairs, k: int):
@@ -56,6 +58,37 @@ def generate_tf_idf_keywords(run_id2demo_pairs, k: int):
             run_id2demo_pairs[run_id][test_id] = element
 
     return run_id2demo_pairs
+
+
+def generate_numerical_keywords(run_id2demo_pairs):
+    # get the OrderDict, key=test_id, value=summary content
+    test_summaries_in_order = [(test_id, demonstrations[0]['summary']) for test_id, demonstrations in
+                               run_id2demo_pairs[0].items()]
+    summaries = [x[1] for x in test_summaries_in_order]
+
+    # For each data record, extract the numerical information with SpaCy
+    test_id2keywords = {}
+    for x in range(len(summaries)):
+        top_keywords: list = []
+        doc = nlp(summaries[x])
+        for ent in doc.ents:
+            if ent.label_ in ["TIME", "DATE", "QUANTITY", "PERCENT"]:
+                top_keywords.append(ent.text)  # fixme: may not be numerical
+        if len(top_keywords) == 0:
+            # extract the numbers from summary
+            top_keywords = [word for word in nltk.word_tokenize(summaries[x]) if word.isdigit()]
+        # sort top_keywords as the order of their appearance in the summary
+        top_keywords = sorted(top_keywords, key=lambda keyword: summaries[x].lower().find(keyword))
+        test_id2keywords[test_summaries_in_order[x][0]] = top_keywords
+
+    for run_id, demo_pairs in run_id2demo_pairs.items():
+        for test_id, _ in demo_pairs.items():
+            element = list(run_id2demo_pairs[run_id][test_id])
+            element.append([test_id2keywords[test_id]])
+            run_id2demo_pairs[run_id][test_id] = element
+
+    return run_id2demo_pairs
+
 
 
 def generate_control_length(run_id2demo_pairs):
