@@ -84,7 +84,8 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
 
 def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replace_entity: bool = False,
                                   is_add_instruction: bool = False, is_focus_planning: bool = False,
-                                  is_random_label: bool = False, is_numerical_label: bool = False):
+                                  is_random_label: bool = False, is_numerical_label: bool = False,
+                                  is_flipped_label: bool = False, is_add_control_signals_in_demon: bool = True):
     """
     Format the prompt text from the demonstration pairs and save the prompt text to the file.
     Double newline is used to separate the prompt text for each dialogue.
@@ -161,6 +162,7 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                     assert len(keywords) > 0
                     keywords_id = 0
                     if len(demonstrations) != 0:
+                        # format the demonstration
                         for demo_dialogue, demo_summary in zip(demonstrations['dialogue'], demonstrations['summary']):
                             keywords_id += 1
                             if 'mt5' in model:
@@ -169,47 +171,54 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                                 prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
                                                                           is_focus_planning=is_focus_planning) + '\n' + '\n'
                             else:
-                                if is_focus_planning:
-                                    prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
-                                                                              keyword_prompts=keywords[keywords_id],
-                                                                              is_add_instruction= not is_add_instruction,
-                                                                              is_focus_planning=is_focus_planning) \
-                                              + '\n' \
-                                              + '\n'
-                                elif is_numerical_label:
-                                    # extract numerical information from demo_summary with spacy
-                                    demo_keywords = []
-                                    doc = nlp(demo_summary)
-                                    for ent in doc.ents:
-                                        if ent.label_ in ["TIME", "DATE", "QUANTITY", "PERCENT"]:
-                                            demo_keywords.append(ent.text)  # fixme: may not be numerical
-                                    if len(demo_keywords) == 0:
-                                        # extract the numbers from summary
-                                        demo_keywords = [word for word in nltk.word_tokenize(demo_summary)
-                                                         if word.isdigit()]
-                                    assert len(demo_keywords) > 0, 'demo summary does not cont' \
-                                                                   'ain numerical information: {}'.format(demo_summary)
-                                    prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
-                                                                              demo_keywords,
-                                                                              is_add_instruction= not is_add_instruction,
-                                                                              is_focus_planning=is_focus_planning) \
-                                              + '\n' \
-                                              + '\n'
+                                if is_add_control_signals_in_demon:
+                                    if is_focus_planning:
+                                        prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                                  keyword_prompts=keywords[keywords_id],
+                                                                                  is_add_instruction= not is_add_instruction,
+                                                                                  is_focus_planning=is_focus_planning) \
+                                                  + '\n' \
+                                                  + '\n'
+                                    elif is_numerical_label:
+                                        # extract numerical information from demo_summary with spacy
+                                        demo_keywords = []
+                                        doc = nlp(demo_summary)
+                                        for ent in doc.ents:
+                                            if ent.label_ in ["TIME", "DATE", "QUANTITY", "PERCENT"]:
+                                                demo_keywords.append(ent.text)  # fixme: may not be numerical
+                                        if len(demo_keywords) == 0:
+                                            # extract the numbers from summary
+                                            demo_keywords = [word for word in nltk.word_tokenize(demo_summary)
+                                                             if word.isdigit()]
+                                        assert len(demo_keywords) > 0, 'demo summary does not cont' \
+                                                                       'ain numerical information: {}'.format(demo_summary)
+                                        prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                                  demo_keywords,
+                                                                                  is_add_instruction= not is_add_instruction,
+                                                                                  is_focus_planning=is_focus_planning) \
+                                                  + '\n' \
+                                                  + '\n'
+                                    else:
+                                        # use ntkl to extract not-stop-word keywords from demo_summary
+                                        # and use them as the keywords for the prompt as the order of the keywords in the summary
+                                        demo_keywords = nltk.word_tokenize(demo_summary)
+                                        demo_keywords = [word for word in demo_keywords if
+                                                         word.isalpha() and word not in STOP_WORDS]
+                                        keyword_num = len(keywords[0])
+                                        demo_keywords_id = np.random.choice(range(len(demo_keywords)), min(keyword_num,
+                                                                                                           len(demo_keywords)),
+                                                                            replace=False)
+                                        demo_keywords_id = sorted(demo_keywords_id)
+                                        demo_keywords = [demo_keywords[i] for i in demo_keywords_id]
+                                        prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                                  demo_keywords,
+                                                                                  is_add_instruction= not is_add_instruction,
+                                                                                  is_focus_planning=is_focus_planning) \
+                                                  + '\n' \
+                                                  + '\n'
                                 else:
-                                    # use ntkl to extract not-stop-word keywords from demo_summary
-                                    # and use them as the keywords for the prompt as the order of the keywords in the summary
-                                    demo_keywords = nltk.word_tokenize(demo_summary)
-                                    demo_keywords = [word for word in demo_keywords if
-                                                     word.isalpha() and word not in STOP_WORDS]
-                                    keyword_num = len(keywords[0])
-                                    demo_keywords_id = np.random.choice(range(len(demo_keywords)), min(keyword_num,
-                                                                                                       len(demo_keywords)),
-                                                                        replace=False)
-                                    demo_keywords_id = sorted(demo_keywords_id)
-                                    demo_keywords = [demo_keywords[i] for i in demo_keywords_id]
                                     prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
-                                                                              demo_keywords,
-                                                                              is_add_instruction= not is_add_instruction,
+                                                                              is_add_instruction=not is_add_instruction,
                                                                               is_focus_planning=is_focus_planning) \
                                               + '\n' \
                                               + '\n'

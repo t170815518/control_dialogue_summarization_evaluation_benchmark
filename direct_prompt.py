@@ -42,6 +42,9 @@ parser.add_argument('--replace_name', type=bool, default=False, help='whether to
                                                                      '#Person1# as DialogSum')
 parser.add_argument('--add_instruction', type=bool, default=False)
 parser.add_argument('--random_label', type=bool, default=False, help='whether to use random labels')
+parser.add_argument('--omit_control_in_demo', type=bool, default=False, help='True means not to add control in demonstrations'
+                                                                           ' (for ablation study)')
+
 # parse the arguments
 args = parser.parse_args()
 
@@ -109,7 +112,9 @@ run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2dem
                                                                       args.add_instruction,
                                                                       is_focus_planning=args.control == 'focus',
                                                                       is_random_label=args.random_label,
-                                                                      is_numerical_label=args.keywords == 'numeric')
+                                                                      is_numerical_label=args.keywords == 'numeric',
+                                                                      is_add_control_signals_in_demon=
+                                                                      not args.omit_control_in_demo)
 
 logging.info("load the model {}".format(args.model))
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
