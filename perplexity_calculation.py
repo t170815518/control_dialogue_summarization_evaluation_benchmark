@@ -10,15 +10,11 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import argparse
+from evaluate import load
 import wandb
 import logging
 from tqdm.auto import tqdm
 import torch
-try:
-    from transformers import AutoTokenizer, MT5ForConditionalGeneration, AutoModelForSeq2SeqLM, AutoModelForCausalLM, \
-        LlamaTokenizer, LlamaForCausalLM
-except ImportError:  # old huggingface does not have LlmaTimeForCausalLM
-    from transformers import AutoTokenizer, MT5ForConditionalGeneration, AutoModelForSeq2SeqLM, AutoModelForCausalLM
 from few_shot_prompt_utility import format_prompt_from_demo_pairs, prompt_llm, evaluate_response_summaries, \
     generate_tf_idf_keywords
 from datasets import load_dataset
@@ -26,31 +22,26 @@ from datasets import load_dataset
 
 # set up argument parser
 parser = argparse.ArgumentParser()
-parser.add_argument('--model', type=str, help='the name of the model to load from HuggingFace')
 parser.add_argument('--run_name', type=str, help='the name of run to fetch the test data from wandb')
-# below are arguments for logging purpose
-parser.add_argument('-k', type=int, default=1, help='the number of few-shot examples')
-parser.add_argument('--dataset', type=str, default='samsum', help='the dataset to evaluate on')
-parser.add_argument('--keywords', type=str, default=None, choices=['tfidf'], help='the types of keywords to use')
-parser.add_argument('--keyword_num', type=int, default=None, help='the number of keywords to use')
+
 # parse the arguments
 args = parser.parse_args()
 
 
-wandb.init(
-        project="In-context-learning for Dialogue Summarization",
-        # track hyperparameters and run metadata
-        config={
-                'model_type': args.model,
-                'k': args.k,
-                'dataset': args.dataset,
-                'keywords': args.keywords,
-                'keyword_num': args.keyword_num,
-                'run_name': args.run_name,
-                },
-        group='performance_in_context_learning',
-        job_type='perplexity_evaluation'
-        )
+# wandb.init(
+#         project="In-context-learning for Dialogue Summarization",
+#         # track hyperparameters and run metadata
+#         config={
+#                 'model_type': args.model,
+#                 'k': args.k,
+#                 'dataset': args.dataset,
+#                 'keywords': args.keywords,
+#                 'keyword_num': args.keyword_num,
+#                 'run_name': args.run_name,
+#                 },
+#         group='performance_in_context_learning',
+#         job_type='perplexity_evaluation'
+#         )
 
 # set up log files
 logging.basicConfig(
@@ -92,86 +83,29 @@ logging.info(f'Number of tables fetched from WanDB: {len(dfs)}')
 df = pd.concat(dfs, axis=0)
 logging.info(f'shape of the dataframe: {df.shape}')
 
-logging.info("load the model {}".format(args.model))
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-device_count = torch.cuda.device_count()
-logging.info('device count = {}'.format(device_count))
+# load perplexity
+perplexity = load("perplexity", module_type="metric")
 
-# load the model
-if args.model in ['google/mt5-xl', 'google/mt5-base']:
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    model = MT5ForConditionalGeneration.from_pretrained(args.model).to(DEVICE)
-elif args.model in ['google/mt5-xxl', 'google/flan-t5-xl']:
-    model = AutoModelForSeq2SeqLM.from_pretrained(args.model, device_map="auto", torch_dtype=torch.float16)
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-elif 'llama' in args.model or 'alpaca' in args.model:
-    model = LlamaForCausalLM.from_pretrained(args.model, device_map="auto", torch_dtype=torch.float16)
-    tokenizer = LlamaTokenizer.from_pretrained(args.model)
-else:
-    try:
-        model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16, device_map='auto')
-    except TypeError:  # when __init__() got an unexpected keyword argument 'device_map'
-        model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float16)
-    if 'opt' in args.model:
-        tokenizer = AutoTokenizer.from_pretrained(args.model, use_fast=False)
-    else:
-        tokenizer = AutoTokenizer.from_pretrained(args.model)
-    try:
-        logging.info("device_map: {}".format(model.hf_device_map))
-    except AttributeError:
-        # send model to GPU
-        model = model.to(DEVICE)
 
 # group the df by run_id, and iterate the group to get average perplexity
 grouped = df.groupby('run_id')
 perplexities = []
-perplexities_df = []
 for run_id, group_df in tqdm(grouped):
-    # iterate the rows of group_df
-    for _, row in tqdm(group_df.iterrows()):
-        prompt_text = row['prompt']
-        # check if the model is mT5
-        if 'mt5' in args.model:
-            pred_summary = row['raw_output']
-        else:
-            pred_summary = row['pred_summary']
-        # ref: https://huggingface.co/docs/transformers/perplexity
-        try:
-            # tokenize to get input_ids
-            prompt_text_ids = tokenizer.encode(prompt_text, return_tensors="pt")
-            summary_ids = tokenizer.encode(pred_summary, return_tensors="pt")
-            eos_token_id = torch.tensor([[tokenizer.eos_token_id]])
-            if device_count > 1:
-                input_ids = torch.cat([prompt_text_ids, summary_ids], dim=-1).to(device_count - 1)
-            else:
-                input_ids = torch.cat([prompt_text_ids, summary_ids], dim=-1).to(DEVICE)
-            target_ids = input_ids.clone()
-            # mask out the elements from prompt_text_ids in target_ids to -100 so that context is not counted in loss
-            target_ids[:, :prompt_text_ids.shape[-1]] = -100
+    # get only the non-empty summaries
+    group_df = group_df[group_df['pred_summary'] != '']
+    # convert group_df['pred_summary'] to list
+    summaries = group_df['pred_summary'].tolist()
+    # compute perplexity and print the average
+    perplexity_value = perplexity.compute(predictions=summaries, model_id='gpt2')
 
-            # get the perplexity
-            with torch.no_grad():
-                outputs = model(input_ids, labels=target_ids)
-                neg_log_likelihood = outputs.loss
-                perplexity = torch.exp(neg_log_likelihood)
-            # append row to perplexities_df
-            perplexities_df.append({'run_id': run_id,
-                                    'prompt': prompt_text,
-                                    'pred_summary': pred_summary,
-                                    'perplexity': perplexity.item()})
-        except Exception as e:
-            logging.info('[error] {}'.format(e))
-            logging.info('[error] prompt_text: {}'.format(prompt_text))
-            logging.info('[error] pred_summary: {}'.format(pred_summary))
-            # append row to perplexities_df
-            perplexities_df.append({'run_id': run_id,
-                                    'prompt': prompt_text,
-                                    'pred_summary': pred_summary,
-                                    'perplexity': np.nan})
+    perplexities.append(perplexity_value['mean_perplexity'])
+
+# print the average perplexity
+print(f'Average perplexity: {np.mean(perplexities)}')
 
 
-# convert perplexities_df to df
-perplexities_df = pd.DataFrame(perplexities_df)
-perplexities_df = wandb.Table(dataframe=perplexities_df)
-wandb.log({"Perplexity Table": perplexities_df})
-wandb.finish()
+# # convert perplexities_df to df
+# perplexities_df = pd.DataFrame(perplexities_df)
+# perplexities_df = wandb.Table(dataframe=perplexities_df)
+# # wandb.log({"Perplexity Table": perplexities_df})
+# wandb.finish()
