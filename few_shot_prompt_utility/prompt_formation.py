@@ -168,8 +168,16 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                             if 'mt5' in model:
                                 # double \n
                                 # for space between demonstrations
-                                prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
-                                                                          is_focus_planning=is_focus_planning) + '\n' + '\n'
+                                if is_focus_planning:
+                                    prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                              keyword_prompts=keywords[keywords_id],
+                                                                              is_add_instruction=not is_add_instruction,
+                                                                              is_focus_planning=is_focus_planning) \
+                                              + '\n' \
+                                              + '\n'
+                                else:
+                                    prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
+                                                                              is_focus_planning=is_focus_planning) + '\n' + '\n'
                             else:
                                 if is_add_control_signals_in_demon:
                                     if is_focus_planning:
@@ -229,9 +237,6 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                         # join each keyword with strings '<extra_id_i>', where i is incrementing from 0
                         span_to_fill = '<extra_id_0> '  # empty space is needed
                         mask_id = 1
-                        if len(keywords) > 1:  # unexpected behavior
-                            logging.warning(
-                                    f'Number of keywords is {len(keywords)} for run_id {run_id} test_id {test_id}')
                         for keyword in keywords[0]:
                             span_to_fill += keyword + ' <extra_id_{}> '.format(mask_id)
                             mask_id += 1
