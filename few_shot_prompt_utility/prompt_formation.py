@@ -15,7 +15,8 @@ nlp = spacy.load("en_core_web_sm")
 
 def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = None, keyword_prompts: list = None,
                                     control_length: int = None, is_replace_entity: bool = False,
-                                    is_add_instruction: bool = True, is_focus_planning: bool = False):
+                                    is_add_instruction: bool = True, is_focus_planning: bool = False,
+                                    is_flipped_focus: bool = False):
     """
     Formulate the dialogue and summary (optional) as the prompt text for model inference.
     :param keyword_prompts: list of keywords for entity control
@@ -38,7 +39,7 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
     else:
         prompt_text = ''
     dialogue = dialogue.strip().replace("\r", "")
-    if is_replace_entity:
+    if is_replace_entity:  # if replace entity like DialogSum as #Person1#
         # Split each line with ':' (max_split=1), and get the set of speakers
         speakers = list(set([line.split(':', maxsplit=1)[0] for line in dialogue.split('\n')]))
         # keep non-empty element only
@@ -71,6 +72,16 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
                 summary = summary.replace(speaker, replace_str)
                 summary = summary.replace(speaker.lower(), replace_str)
                 summary = summary.replace(speaker[0].lower() + speaker[1:], replace_str)
+        if is_flipped_focus:
+            # replace the focus entity in summary with a random different name in keyword_prompts,
+            # without using str.replace()
+            summary = summary.split()
+            for i, word in enumerate(summary):
+                if word in keyword_prompts:
+                    # the candidates exclude the name itself
+                    candidates = [name for name in keyword_prompts if name != word]
+                    summary[i] = random.choice(candidates)
+            summary = ' '.join(summary)
         prompt_text += summary
         if 'mt5' in model:
             prompt_text += summary + '</s>'
@@ -85,7 +96,7 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
 def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replace_entity: bool = False,
                                   is_add_instruction: bool = False, is_focus_planning: bool = False,
                                   is_random_label: bool = False, is_numerical_label: bool = False,
-                                  is_flipped_label: bool = False, is_add_control_signals_in_demon: bool = True):
+                                  is_flipped_label: bool = False, is_add_control_signals_in_demon: bool = True, ):
     """
     Format the prompt text from the demonstration pairs and save the prompt text to the file.
     Double newline is used to separate the prompt text for each dialogue.
@@ -172,7 +183,8 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                                     prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
                                                                               keyword_prompts=keywords[keywords_id],
                                                                               is_add_instruction=not is_add_instruction,
-                                                                              is_focus_planning=is_focus_planning) \
+                                                                              is_focus_planning=is_focus_planning,
+                                                                              is_flipped_focus=is_flipped_label) \
                                               + '\n' \
                                               + '\n'
                                 else:
@@ -184,7 +196,8 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                                         prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
                                                                                   keyword_prompts=keywords[keywords_id],
                                                                                   is_add_instruction= not is_add_instruction,
-                                                                                  is_focus_planning=is_focus_planning) \
+                                                                                  is_focus_planning=is_focus_planning,
+                                                                                  is_flipped_focus=is_flipped_label) \
                                                   + '\n' \
                                                   + '\n'
                                     elif is_numerical_label:

@@ -44,6 +44,8 @@ parser.add_argument('--add_instruction', type=bool, default=False)
 parser.add_argument('--random_label', type=bool, default=False, help='whether to use random labels')
 parser.add_argument('--omit_control_in_demo', type=bool, default=False, help='True means not to add control in demonstrations'
                                                                            ' (for ablation study)')
+parser.add_argument('--flip_label', type=bool, default=False,
+                    help='whether to flip the labels in demonstrations\' summaries')
 
 # parse the arguments
 args = parser.parse_args()
@@ -113,6 +115,7 @@ run_id2prompts, run_id2gold_summaries = format_prompt_from_demo_pairs(run_id2dem
                                                                       is_focus_planning=args.control == 'focus',
                                                                       is_random_label=args.random_label,
                                                                       is_numerical_label=args.keywords == 'numeric',
+                                                                      is_flipped_label=args.flip_label,
                                                                       is_add_control_signals_in_demon=
                                                                       not args.omit_control_in_demo)
 
@@ -155,7 +158,8 @@ for run_id, prompts in run_id2prompts.items():
             else:
                 if isinstance(prompt, list):  # for mt5 with keywords
                     assert len(prompt) == 2
-                    response, raw_output = prompt_llm(model, tokenizer, prompt[0], is_gpt_style, spans_to_fill=prompt[1])
+                    response, raw_output = prompt_llm(model, tokenizer, prompt[0], is_gpt_style,
+                                                      spans_to_fill=prompt[1])
                 else:  # direct prompt mt5
                     response, raw_output = prompt_llm(model, tokenizer, prompt, is_gpt_style)
                 run_id2raw_outputs[run_id].append(raw_output)
