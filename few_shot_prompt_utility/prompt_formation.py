@@ -181,9 +181,7 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                                 # for space between demonstrations
                                 if is_focus_planning:
                                     prompt += formulate_record_to_prompt_text(demo_dialogue, model, demo_summary,
-                                                                              keyword_prompts=keywords[keywords_id],
                                                                               is_add_instruction=not is_add_instruction,
-                                                                              is_focus_planning=is_focus_planning,
                                                                               is_flipped_focus=is_flipped_label) \
                                               + '\n' \
                                               + '\n'
@@ -244,9 +242,7 @@ def format_prompt_from_demo_pairs(run_id2demo_pairs: dict, model: str, is_replac
                                               + '\n' \
                                               + '\n'
                     if 'mt5' in model:
-                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model,
-                                                                  keyword_prompts=keywords[0],
-                                                                  is_focus_planning=is_focus_planning)
+                        prompt += formulate_record_to_prompt_text(test_sample['dialogue'], model)
                         # join each keyword with strings '<extra_id_i>', where i is incrementing from 0
                         span_to_fill = '<extra_id_0> '  # empty space is needed
                         mask_id = 1
