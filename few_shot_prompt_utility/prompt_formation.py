@@ -80,7 +80,12 @@ def formulate_record_to_prompt_text(dialogue: str, model: str, summary: str = No
                 if word in keyword_prompts:
                     # the candidates exclude the name itself
                     candidates = [name for name in keyword_prompts if name != word]
-                    summary[i] = random.choice(candidates)
+                    if len(candidates) > 0:
+                        summary[i] = random.choice(candidates)
+                    else:
+                        # log the candidates are empty
+                        logging.info(f'candidates are empty: {keyword_prompts}')
+                        continue
             summary = ' '.join(summary)
         prompt_text += summary
         if 'mt5' in model:
