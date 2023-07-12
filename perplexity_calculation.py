@@ -1,5 +1,6 @@
 """
-This module is to calculate the perplexity of the test data fetched from wandb.
+This module is to calculate the perplexity of the test data fetched from wandb, using GPT-2.
+GPT3 can be used as well.
 """
 
 
