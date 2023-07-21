@@ -35,6 +35,8 @@ parser.add_argument('--keyword_num', type=int, default=None, help='the number of
 parser.add_argument('--control', type=str, default=None, choices=['length', 'entity', 'focus'],
                     help='the type of control')
 parser.add_argument('--sample_num', type=int, default=-1, help='the number of samples to evaluate')
+parser.add_argument('--mode', type=str, default='coherence', choices=['coherence', 'relevance'],
+                    help='the mode of evaluation')
 
 # parse the arguments
 args = parser.parse_args()
@@ -68,6 +70,8 @@ api_helper = wandb.Api(api_key='3138e1b24deb278ed045d0dedb39511d3a96245b')
 runs = list(api_helper.runs(path='yuting_fyp/In-context-learning for Dialogue Summarization',
                             per_page=1000))
 logging.info(f'Number of runs fetched from WanDB: {len(runs)}')
+logging.info(f'The evaluation mode is {args.mode}')
+
 
 # iterate over runs to get the artifects
 dfs = []
@@ -98,7 +102,7 @@ perplexities = []
 gpt_response_df = []
 for run_id, group_df in tqdm(grouped):
     if args.sample_num > 0:
-        group_df = group_df.sample(args.sample_num)
+        group_df = group_df.iloc[:args.sample_num]
         logging.info('Evaluate only on {} samples'.format(args.sample_num))
     # iterate the rows of group_df
     for _, row in tqdm(group_df.iterrows()):
@@ -113,15 +117,14 @@ for run_id, group_df in tqdm(grouped):
             dialogue = '\n'.join([line for line in dialogue.split('\n') if not line.startswith('Summary')])
 
             # call the evaluation function
-            results = writing_evaluation(dialogue, pred_summary)
+            results = writing_evaluation(dialogue, pred_summary, mode=args.mode)
 
             # append row to gpt_response_df
             gpt_response_df.append({'run_id': run_id,
                                     'prompt': prompt_text,
                                     'pred_summary': pred_summary,
                                     'gpt_response': results['response_text'],
-                                    'coherence': results['coherence'],
-                                    'relevance': results['relevance'],
+                                    args.mode: results[args.mode],
                                     })
         except Exception as e:
             logging.info('[error] {}'.format(e))
